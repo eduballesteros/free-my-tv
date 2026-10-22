@@ -103,10 +103,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static int tabsGeneration = -1;
     private static final String[] TAB_KIND = {null, "movie", "tv"};
     /**
-     * Explore, Movies, Shows, Recent (the apps used last) and, when it is set up, YouTube (your channels' newest videos);
-     * the three corner buttons follow them in topRects.
+     * Explore, Movies, Shows and Recent (the apps used last); the three corner buttons follow them in topRects. With
+     * YouTube set up, Explore shows your channels' newest videos instead of TMDB's picks.
      */
-    private static final int TABS = YouTube.configured() ? 5 : 4, RECENT = 3, YOUTUBE = 4;
+    private static final int TABS = 4, EXPLORE = 0, RECENT = 3;
     private static final int Z_TOP = 4, Z_CARDS = 5;
 
     private final Activity activity;
@@ -152,8 +152,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final RectF artRect = new RectF();
     private final Spring[] topFocus = new Spring[TABS + 3];
     private final RectF[] topRects = new RectF[TABS + 3];
-    private final Spring[] cardFocus = new Spring[3];
-    private final RectF[] cardRects = new RectF[3];
+    // The cards: three (one wide, two tall) on most tabs; YouTube's videos (Explore), up to ten in a row that scrolls.
+    // cardBase: where each sits in the row; cardRects: where it is on screen now (the row scrolled by cardScroll).
+    private static final int MAX_CARDS = YouTube.KEEP, CARDS_CLASSIC = 0, CARDS_VIDEOS = 1;
+    private final Spring[] cardFocus = new Spring[MAX_CARDS];
+    private final RectF[] cardRects = new RectF[MAX_CARDS], cardBase = new RectF[MAX_CARDS];
+    private final Spring cardScroll = new Spring(0.34f, 1f, 0);
+    private int cardCount = 3, cardMode = -1;
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
     private Paint lHeadClock, lGreeting, lHeadDate;
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
@@ -408,9 +413,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             topFocus[i] = new Spring(0.26f, 0.85f, 0);
             topRects[i] = new RectF();
         }
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < MAX_CARDS; i++) {
             cardFocus[i] = new Spring(0.32f, 0.78f, 0);
             cardRects[i] = new RectF();
+            cardBase[i] = new RectF();
         }
         makeLightButtons();
         recs.setLight(true);
@@ -510,8 +516,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The tab names, made again only when the language changes (they are drawn on every frame). */
     private static String[] tabs() {
         if (tabsGeneration != Ui.generation) {
-            tabs = TABS == 5 ? new String[] {Ui.tr("Explore"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Recent"), "YouTube"}
-                    : new String[] {Ui.tr("Explore"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Recent")};
+            tabs = new String[] {Ui.tr("Explore"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Recent")};
             tabsGeneration = Ui.generation;
         }
         return tabs;
@@ -686,6 +691,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean statusMoving = step(statusFocus, dt);
         boolean heroMoving = heroFocus.step(dt);
         boolean topMoving = step(topFocus, dt), cardsMoving = step(cardFocus, dt);
+        if (cardScroll.step(dt)) {
+            placeCards();
+            cardsMoving = true;
+        }
         if (topMoving) status.invalidate();
         heroMoving |= topMoving | cardsMoving;
         boolean drawerItemsMoving = step(drawerFocus, dt);
@@ -2552,7 +2561,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             return;
         }
         for (int i = picksOn() ? 0 : TABS; i < TABS + lightButtons.size(); i++) out.add(a11yId(Z_TOP, i));
-        for (int i = 0; i < Math.min(3, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
+        for (int i = 0; i < Math.min(cardCount, cards.size()); i++) out.add(a11yId(Z_CARDS, i));
         for (int i = 0; i < shelf.size(); i++) out.add(a11yId(Z_SHELF, i));
         for (int i = 0; i < drawerItems.size(); i++) out.add(a11yId(Z_DRAWER, i));
         if (drawerOpen && Prefs.weather()) out.add(a11yId(WIDGETS, 0));
@@ -2604,7 +2613,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 dy = (i < TABS ? heroLayer : status).getTranslationY();
                 break;
             case Z_CARDS:
-                if (i >= Math.min(3, cards.size())) return false;
+                if (i >= Math.min(cardCount, cards.size())) return false;
                 a11yRect.set(cardRects[i]);
                 dy = heroLayer.getTranslationY();
                 break;
@@ -2784,12 +2793,57 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             topRects[TABS + i].set(right - b, cy - b / 2, right, cy + b / 2);
             right -= b + L_BUTTON_GAP * k;
         }
-        float top = L_CARDS_TOP * k, ch = L_CARD_H * k, g = L_CARD_GAP * k, left = MARGIN * k, tall = L_TALL_W * k;
-        float wide = (CONTENT_R - MARGIN) * k - 2 * tall - 2 * g;
-        cardRects[0].set(left, top, left + wide, top + ch);
-        cardRects[1].set(cardRects[0].right + g, top, cardRects[0].right + g + tall, top + ch);
-        cardRects[2].set(cardRects[1].right + g, top, cardRects[1].right + g + tall, top + ch);
+        layoutCards();
         heroDirty = statusDirty = true;
+    }
+
+    /** Explore shows YouTube's videos when it is set up (until you sign in, the sign-in card). */
+    private boolean youtubeTab(int t) {
+        return t == EXPLORE && YouTube.configured();
+    }
+
+    private int cardModeFor(int t) {
+        return youtubeTab(t) && youtube.linked() ? CARDS_VIDEOS : CARDS_CLASSIC;   // the sign-in card is the wide one
+    }
+
+    /** The cards' places for this tab: the three of the picks, or a row of 16:9 videos. */
+    private void layoutCards() {
+        cardMode = cardModeFor(tab);
+        float top = L_CARDS_TOP * k, left = MARGIN * k;
+        if (cardMode == CARDS_CLASSIC) {
+            float ch = L_CARD_H * k, g = L_CARD_GAP * k, tall = L_TALL_W * k;
+            float wide = (CONTENT_R - MARGIN) * k - 2 * tall - 2 * g;
+            cardBase[0].set(left, top, left + wide, top + ch);
+            cardBase[1].set(cardBase[0].right + g, top, cardBase[0].right + g + tall, top + ch);
+            cardBase[2].set(cardBase[1].right + g, top, cardBase[1].right + g + tall, top + ch);
+            cardCount = 3;
+        } else {
+            float cw = YouTube.VIDEO_W * k, ch = YouTube.VIDEO_H * k, g = L_CARD_GAP * k;
+            for (int i = 0; i < MAX_CARDS; i++) cardBase[i].set(left + i * (cw + g), top, left + i * (cw + g) + cw, top + ch);
+            cardCount = MAX_CARDS;
+        }
+        cardScroll.target = 0;
+        cardScroll.snap(0);
+        placeCards();
+        lightSheens = new LinearGradient[0];   // the card sizes changed: their sheens are made again
+        heroDirty = true;
+    }
+
+    private void placeCards() {
+        for (int i = 0; i < MAX_CARDS; i++) {
+            cardRects[i].set(cardBase[i]);
+            cardRects[i].offset(-cardScroll.value, 0);
+        }
+    }
+
+    /** Scrolls the row just enough to show the focused card whole. */
+    private void scrollToCard() {
+        if (cardMode == CARDS_CLASSIC || cardIndex >= MAX_CARDS) return;
+        RectF b = cardBase[cardIndex];
+        float target = cardScroll.target;
+        if (b.right - target > CONTENT_R * k) target = b.right - CONTENT_R * k;
+        if (b.left - target < MARGIN * k) target = b.left - MARGIN * k;
+        cardScroll.target = Math.max(0, target);
     }
 
     /**
@@ -2797,7 +2851,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * shows the apps used last, on the plain background.
      */
     private void updateCards() {
-        List<Recs.Pick> list = tab == RECENT ? recentPicks() : tab == YOUTUBE ? youtubePicks() : recs.now(TAB_KIND[tab]);
+        if (cardModeFor(tab) != cardMode) layoutCards();   // signed in to YouTube: its row
+        List<Recs.Pick> list = tab == RECENT ? recentPicks() : youtubeTab(tab) ? youtubePicks() : recs.now(TAB_KIND[tab]);
         if (!samePicks(list, cards)) {
             cards = list;
             cardIndex = Math.min(cardIndex, Math.max(0, list.size() - 1));
@@ -2805,11 +2860,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 zone = Z_SHELF;
                 retarget(false);
             }
-        } else if (tab == RECENT || tab == YOUTUBE) {
+        } else if (tab == RECENT || youtubeTab(tab)) {
             cards = list;   // the same ones, but "5 min ago" moves on (and the sign-in card's text changes)
         }
         for (Recs.Pick p : recs.wanted()) recs.backdrop(p);   // all three tabs preloaded: switching tabs is instant
-        boolean own = tab == RECENT || tab == YOUTUBE;   // their cards aren't TMDB's: the plain background
+        boolean own = tab == RECENT || youtubeTab(tab);   // not TMDB's: the plain background
         Backdrop b = cards.isEmpty() || own ? null : recs.backdrop(cards.get(0));
         if (cards.isEmpty() || own || b != null) showBackdrop(b);
         heroDirty = true;
@@ -2825,11 +2880,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     @Override public void onYouTube() {
         wake();
-        if (tab == YOUTUBE) updateCards();
+        if (youtubeTab(tab)) updateCards();
         heroDirty = true;
     }
 
-    // The YouTube tab's cards: videos (by id), or one card to sign in, whose lines are made here (not while drawing).
+    // Explore's YouTube cards: videos (by id), or one card to sign in, whose lines are made here (not while drawing).
     private static final String YT_VIDEO = "yt", YT_LINK = "yt-link";
     private final Map<String, YouTube.Video> ytVideos = new HashMap<>();
     private String ytHeading = "", ytLine = "", ytCode = "", ytWait = "";
@@ -2904,6 +2959,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void selectTab(int index) {
         if (index == tab) return;
         tab = index;
+        cardIndex = 0;
+        layoutCards();
         updateCards();
         heroDirty = true;
     }
@@ -2980,8 +3037,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.drawText(tabs()[i], r.centerX() - p.measureText(tabs()[i]) / 2, r.centerY() + Ui.halfCap(p), p);
         }
         int top = -1;
-        for (int i = 0; i < 3; i++) if (cardFocus[i].value > 0.02f && (top < 0 || cardFocus[i].value > cardFocus[top].value)) top = i;
-        for (int i = 0; i < 3; i++) if (i != top) drawLightCard(c, i);
+        for (int i = 0; i < cardCount; i++) if (cardFocus[i].value > 0.02f && (top < 0 || cardFocus[i].value > cardFocus[top].value)) top = i;
+        for (int i = 0; i < cardCount; i++) if (i != top) drawLightCard(c, i);
         if (top >= 0) drawLightCard(c, top);
         if (HomeData.coinCount() > 0) drawQuotes(c);
         else drawTabWeather(c);
@@ -3106,7 +3163,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawLightCard(Canvas c, int i) {
         RectF base = cardRects[i];
         Recs.Pick p = i < cards.size() ? cards.get(i) : null;
-        if (p == null && (tab == RECENT || tab == YOUTUBE)) return;   // fewer than three: no empty placeholders
+        if (p == null && (tab == RECENT || youtubeTab(tab))) return;   // fewer: no empty placeholders
+        if (cardRects[i].right < -40 * k || cardRects[i].left > w + 40 * k) return;          // scrolled off screen
         float v = cardFocus[i].value, f = Ui.clamp(v), s = 1 + 0.05f * v;
         float bw = base.width(), bh = base.height(), r0 = 18 * k;
         float cx = base.centerX(), cy = base.centerY() - 6 * k * v;
@@ -3124,7 +3182,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         YouTube.Video video = p != null && YT_VIDEO.equals(p.kind) ? ytVideos.get(p.app) : null;
         boolean own = app != null || video != null || (p != null && YT_LINK.equals(p.kind));
         Backdrop b = p == null || own ? null : recs.backdrop(p);
-        Bitmap img = video != null ? (i == 0 ? video.wide : video.tall) : b == null ? null : (i == 0 ? b.wide : b.tall);
+        Bitmap img = video != null ? video.image : b == null ? null : (i == 0 ? b.wide : b.tall);
         if (p != null && YT_LINK.equals(p.kind)) {
             drawLinkCard(c, cell, r);
             return;
@@ -3230,6 +3288,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 } else {
                     zone = Z_CARDS;
                     cardIndex = nearest(cardRects, cards.size(), shelf.isEmpty() ? w / 2f : tileRects[shelfIndex].centerX());
+                    scrollToCard();
                 }
                 break;
             case Z_CARDS:
@@ -3237,6 +3296,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     int next = Math.max(0, Math.min(cards.size() - 1, cardIndex + dx));
                     if (next == cardIndex) return true;
                     cardIndex = next;
+                    scrollToCard();
                 } else if (dy < 0) {
                     zone = Z_TOP;
                     topIndex = tab;     // as on Apple TV: moving up to the tabs focuses the selected tab
@@ -3257,6 +3317,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                     } else {
                         zone = Z_CARDS;
                         cardIndex = nearest(cardRects, cards.size(), topRects[topIndex].centerX());
+                    scrollToCard();
                     }
                 } else {
                     return true;

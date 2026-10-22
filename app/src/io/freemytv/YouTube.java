@@ -7,7 +7,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Rect;
-import android.graphics.RectF;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -37,24 +36,25 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * The YouTube tab: the newest videos of the channels you watch most. YouTube shares no one's home feed or history, so
+ * YouTube on Explore: the newest videos of the channels you watch most. YouTube shares no one's home feed or history, so
  * this signs in to your account with Google's code-on-another-screen flow (youtube_client_id and youtube_client_secret
  * in config.properties: an OAuth client of type "TVs and Limited Input devices"), reads your subscriptions in YouTube's
  * own order of relevance (1 quota unit a page, once a day), and takes each channel's newest uploads from its public
- * feed (no quota). Shorts are left out. The sign-in stays in this app's private storage; Original doesn't touch it.
+ * feed (no quota): the ten newest videos, without Shorts. The sign-in stays in this app's private storage;
+ * Original doesn't touch it.
  */
 final class YouTube {
     static final String PKG = "com.google.android.youtube.tv";
     private static final String SCOPE = "https://www.googleapis.com/auth/youtube.readonly";
-    private static final int CHANNELS = 25, KEEP = 12;
+    static final int CHANNELS = 25, KEEP = 10;
     private static final long VIDEOS_EVERY = 30 * 60_000L, CHANNELS_EVERY = 24 * 3600_000L, WINDOW = 14 * 24 * 3600_000L;
-    /** The card sizes (the wide one and the tall ones of the home screen, at 1080p): images are cut to them once. */
-    private static final int WIDE_W = 1040, WIDE_H = 442, TALL_W = 320, TALL_H = 442;
+    /** The cards (16:9, at 1080p): each image is cut to its card once. */
+    static final int VIDEO_W = 560, VIDEO_H = 315;
 
     static final class Video {
         String id, title, channel;
         long published;
-        volatile Bitmap wide, tall;
+        volatile Bitmap image;
         volatile boolean loading;
     }
 
@@ -206,14 +206,12 @@ final class YouTube {
                 for (Video v : videos) old.put(v.id, v);
                 for (Video v : keep) {
                     Video o = old.get(v.id);
-                    if (o != null) { v.wide = o.wide; v.tall = o.tall; }
+                    if (o != null) v.image = o.image;
                 }
                 videos = keep;
                 videosAt = System.currentTimeMillis();
                 notifyListeners();
                 AppLog.w("youtube: " + keep.size() + " videos from " + channels.size() + " channels");
-                for (int i = 0; i < keep.size() && i < 3; i++) images(keep.get(i));
-                notifyListeners();
             } catch (Exception e) {
                 failedAt = System.currentTimeMillis();
                 AppLog.w("youtube: " + e.getClass().getSimpleName() + " " + (e instanceof IOException ? e.getMessage() : ""));
@@ -223,18 +221,16 @@ final class YouTube {
         });
     }
 
-    /** The cards of this hour: three of the newest, the newest always first. Makes the missing images in the background. */
+    /** The newest videos, the newest first. Makes the missing images in the background. */
     List<Video> now() {
-        List<Video> list = videos;
-        List<Video> out = new ArrayList<>();
-        for (int i = 0; i < list.size() && out.size() < 3; i++) out.add(list.get(i));
+        List<Video> out = new ArrayList<>(videos);
         for (Video v : out) {
-            if (v.wide != null || v.loading) continue;
+            if (v.image != null || v.loading) continue;
             v.loading = true;
             io.execute(() -> {
                 images(v);
                 v.loading = false;
-                if (v.wide != null) notifyListeners();
+                if (v.image != null) notifyListeners();
             });
         }
         return out;
@@ -305,11 +301,12 @@ final class YouTube {
         return out;
     }
 
-    /** The video's image, cut once to the wide card and fitted into the tall ones (on the image's own dark edge). */
+    /** The video's image, cut once to its card (the 4:3 hqdefault has black bands, cut off). */
     private static void images(Video v) {
-        if (v.wide != null) return;
+        if (v.image != null) return;
         Bitmap src = null;
-        for (String name : new String[] {"maxresdefault", "hqdefault"}) {
+        String[] names = {"maxresdefault", "hqdefault"};
+        for (String name : names) {
             try {
                 byte[] data = bytes("https://i.ytimg.com/vi/" + v.id + "/" + name + ".jpg");
                 src = BitmapFactory.decodeByteArray(data, 0, data.length);
@@ -318,26 +315,25 @@ final class YouTube {
             }
         }
         if (src == null) return;
-        // hqdefault is 4:3 with black bands: only its 16:9 middle is the picture.
         Rect pic = new Rect(0, 0, src.getWidth(), src.getHeight());
-        if (src.getWidth() * 9 < src.getHeight() * 16) {
-            int h = src.getWidth() * 9 / 16;
+        if (src.getWidth() * 9 < src.getHeight() * 16 && src.getWidth() > src.getHeight()) {
+            int h = src.getWidth() * 9 / 16;   // hqdefault: the 16:9 middle
             pic.set(0, (src.getHeight() - h) / 2, src.getWidth(), (src.getHeight() + h) / 2);
         }
-        Paint smooth = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG);
-        Bitmap wide = Bitmap.createBitmap(WIDE_W, WIDE_H, Bitmap.Config.ARGB_8888);
-        // Cover: the picture's middle band, as wide as the card.
-        int bandH = pic.width() * WIDE_H / WIDE_W;
-        Rect band = new Rect(pic.left, pic.centerY() - bandH / 2, pic.right, pic.centerY() + bandH / 2);
-        new Canvas(wide).drawBitmap(src, band, new Rect(0, 0, WIDE_W, WIDE_H), smooth);
-        Bitmap tall = Bitmap.createBitmap(TALL_W * 2, TALL_H * 2, Bitmap.Config.ARGB_8888);
-        Canvas t = new Canvas(tall);
-        t.drawColor(0xFF0F0F0F);
-        float h = TALL_W * 2 * pic.height() / (float) pic.width();
-        t.drawBitmap(src, pic, new RectF(0, (TALL_H * 2 - h) / 2, TALL_W * 2, (TALL_H * 2 + h) / 2), smooth);
+        int w = VIDEO_W, h = VIDEO_H;
+        // Cover: the largest part of the picture with the card's shape, from its middle.
+        Rect cut = new Rect(pic);
+        if (pic.width() * h > pic.height() * w) {
+            int cw = pic.height() * w / h;
+            cut.set(pic.centerX() - cw / 2, pic.top, pic.centerX() + cw / 2, pic.bottom);
+        } else {
+            int ch = pic.width() * h / w;
+            cut.set(pic.left, pic.centerY() - ch / 2, pic.right, pic.centerY() + ch / 2);
+        }
+        Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        new Canvas(out).drawBitmap(src, cut, new Rect(0, 0, w, h), new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG));
         src.recycle();
-        v.wide = wide;
-        v.tall = tall;
+        v.image = out;
     }
 
     // MARK: - HTTP

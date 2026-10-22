@@ -345,6 +345,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (!running) return;
             wake();
             data.refreshIfStale();
+            data.dropPastEvents();
             recs.refreshIfStale();
             checkNotices();
             updatePalette();
@@ -1457,7 +1458,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             x += tw + gap;
         }
         float cardsTop = CARDS_TOP * k, split = left + (right - left) * 0.585f;
-        boolean wx = Prefs.weather(), qt = Prefs.quotes() && HomeData.active().length > 0;
+        // The calendar, when set, takes the quotes' place (their prices still show on the tab row).
+        boolean wx = Prefs.weather(), qt = Agenda.on() || (Prefs.quotes() && HomeData.active().length > 0);
         // A card that is off gives its room to the other one.
         weatherCard.set(left, cardsTop, qt ? split - 16 * k : right, cardsTop + CARDS_H * k);
         quotesCard.set(wx ? split + 16 * k : left, cardsTop, right, cardsTop + CARDS_H * k);
@@ -1523,7 +1525,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < drawerItems.size(); i++) if (i != top) drawDrawerTile(c, i);
         if (top >= 0) drawDrawerTile(c, top);
         if (Prefs.weather()) drawWeatherCard(c, weatherCard);
-        if (Prefs.quotes() && HomeData.active().length > 0) drawQuotesCard(c, quotesCard);
+        if (Agenda.on()) drawAgendaCard(c, quotesCard);
+        else if (Prefs.quotes() && HomeData.active().length > 0) drawQuotesCard(c, quotesCard);
     }
 
     /** Square drawer button: symbol and name; an input with no device is dimmed. Focused: white, with dark text. */
@@ -1647,7 +1650,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * sunrise and sunset, "12 min ago").
      */
     private String drawerCardsKey() {
-        return data.weatherAt + "|" + data.pricesAt + "|" + Prefs.version + "|" + Ui.language + "|"
+        return data.weatherAt + "|" + data.pricesAt + "|" + data.eventsAt + "|" + data.events.size() + "|" + Prefs.version + "|" + Ui.language + "|"
                 + Float.floatToIntBits(dark()) + "|" + System.currentTimeMillis() / 60_000;
     }
 
@@ -1677,7 +1680,82 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
-    private final Snapshot weatherSnapshot = new Snapshot(), quotesSnapshot = new Snapshot();
+    private final Snapshot weatherSnapshot = new Snapshot(), quotesSnapshot = new Snapshot(), agendaSnapshot = new Snapshot();
+
+    /** The calendar's next events (Agenda): day, time and title, one per row. */
+    private void drawAgendaCard(Canvas c, RectF r) {
+        drawerCard(c, r);
+        if (Ui.LEGACY) agendaSnapshot.draw(c, r, drawerCardsKey(), cc -> drawAgenda(cc, r));
+        else drawAgenda(c, r);
+    }
+
+    private void drawAgenda(Canvas c, RectF r) {
+        refreshAgendaText();
+        float x = r.left + 34 * k;
+        if (agendaLaidOut != agendaVersion || agendaWidth != r.width() || agendaSize != cardText.getTextSize()) layoutAgenda(r.width());
+        c.drawText(agendaHeading, x, r.top + 54 * k, cardTitle);
+        if (agendaRows == 0) {
+            c.drawText(agendaEmpty, x, r.top + 120 * k, cardDim);
+            return;
+        }
+        for (int j = 0; j < agendaRows; j++) {
+            float base = r.top + (110 + 52 * j) * k;
+            c.drawText(agendaDay[j], x, base, cardDim);
+            c.drawText(agendaWhen[j], x + agendaTimeX, base, cardText);
+            c.drawText(agendaFit[j], x + agendaTitleX, base, cardText);
+        }
+    }
+
+    // The calendar's text, made again only when the events, the minute or the language change (drawn on every frame).
+    private static final int AGENDA_ROWS = 4;
+    private final String[] agendaDay = new String[AGENDA_ROWS], agendaWhen = new String[AGENDA_ROWS];
+    private final String[] agendaTitle = new String[AGENDA_ROWS], agendaFit = new String[AGENDA_ROWS];
+    private int agendaRows, agendaVersion, agendaLaidOut = -1, agendaGeneration = -1;
+    private List<Agenda.Event> agendaList;
+    private long agendaMinute = -1, agendaFetched = -1;
+    private float agendaWidth, agendaSize, agendaTimeX, agendaTitleX;
+    private String agendaHeading = "", agendaEmpty = "", nextEvent = "";
+
+    private void refreshAgendaText() {
+        List<Agenda.Event> list = data.events;
+        long now = System.currentTimeMillis(), minute = now / 60_000;
+        if (list == agendaList && minute == agendaMinute && Ui.generation == agendaGeneration && data.eventsAt == agendaFetched) return;
+        agendaList = list;
+        agendaMinute = minute;
+        agendaGeneration = Ui.generation;
+        agendaFetched = data.eventsAt;
+        agendaVersion++;
+        agendaHeading = Ui.tr("Calendar");
+        agendaEmpty = data.eventsAt == 0 ? "" : Ui.tr("No events in the next 7 days.");
+        agendaRows = 0;
+        nextEvent = "";
+        for (Agenda.Event e : list) {
+            if (Math.max(e.end, e.start + 1) <= now) continue;
+            if (agendaRows == 0) nextEvent = Agenda.line(e, now);
+            agendaDay[agendaRows] = Agenda.day(e.start, now);
+            agendaWhen[agendaRows] = Agenda.when(e, now);
+            agendaTitle[agendaRows] = e.title;
+            if (++agendaRows == AGENDA_ROWS) break;
+        }
+    }
+
+    /** Columns as wide as their longest entry; titles cut to what's left of the card. */
+    private void layoutAgenda(float width) {
+        agendaLaidOut = agendaVersion;
+        agendaWidth = width;
+        agendaSize = cardText.getTextSize();
+        float dayW = 0, timeW = 0;
+        for (int j = 0; j < agendaRows; j++) {
+            dayW = Math.max(dayW, cardDim.measureText(agendaDay[j]));
+            timeW = Math.max(timeW, cardText.measureText(agendaWhen[j]));
+        }
+        agendaTimeX = dayW + 24 * k;
+        agendaTitleX = agendaTimeX + timeW + 24 * k;
+        fitPaint.set(cardText);
+        for (int j = 0; j < agendaRows; j++) {
+            agendaFit[j] = TextUtils.ellipsize(agendaTitle[j], fitPaint, width - 68 * k - agendaTitleX, TextUtils.TruncateAt.END).toString();
+        }
+    }
 
     private void drawPrices(Canvas c, RectF r) {
         float x = r.left + 34 * k, right = r.right - 34 * k;
@@ -2424,7 +2502,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 }
                 return label(shelf, i);
             case Z_DRAWER: return label(drawerItems, i);
-            case WIDGETS: return i == 0 ? weatherText() : quotesText();
+            case WIDGETS: return i == 0 ? weatherText() : Agenda.on() ? agendaText() : quotesText();
             default: return "";
         }
     }
@@ -2499,7 +2577,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         List<Integer> out = new ArrayList<>();
         if (!drawerOpen) return out;
         if (Prefs.weather()) out.add(0);
-        if (Prefs.quotes() && HomeData.active().length > 0) out.add(1);
+        if (Agenda.on() || (Prefs.quotes() && HomeData.active().length > 0)) out.add(1);
         return out;
     }
 
@@ -2593,6 +2671,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     /** The quotes card as TalkBack reads it: each coin with its price and 24 h change. */
+    private String agendaText() {
+        refreshAgendaText();
+        StringBuilder s = new StringBuilder(agendaHeading).append('.');
+        if (agendaRows == 0 && !agendaEmpty.isEmpty()) s.append(' ').append(agendaEmpty);
+        for (int j = 0; j < agendaRows; j++) {
+            s.append(' ').append(agendaDay[j]).append(", ").append(agendaWhen[j]).append(", ").append(agendaTitle[j]).append('.');
+        }
+        return s.toString();
+    }
+
     private String quotesText() {
         StringBuilder s = new StringBuilder(Ui.tr("Crypto"));
         String stale = HomeData.staleness(data.pricesAt, 5 * 60_000L);
@@ -2764,28 +2852,50 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Without quotes, the temperature in their place: weather symbol and degrees at the right end of the tab row. */
     private void drawTabWeather(Canvas c) {
         HomeData.Weather wx = data.weather;
-        if (!Prefs.weather() || Double.isNaN(wx.temp)) return;
+        boolean weather = Prefs.weather() && !Double.isNaN(wx.temp);
+        if (Agenda.on()) refreshAgendaText();
+        if (!weather && nextEvent.isEmpty()) return;
         // Like the quotes, it fades out while a corner button's name shows in this row.
         float fade = 1;
         for (int i = TABS; i < TABS + 3; i++) fade = Math.min(fade, 1 - Ui.clamp(topFocus[i].value));
         if (fade <= 0.01f) return;
-        if (data.weatherAt != tabTempAt || Prefs.version != tabTempPrefs || lQuote.getTextSize() != tabTempSize) {
-            tabTempAt = data.weatherAt;
-            tabTempPrefs = Prefs.version;
-            tabTempSize = lQuote.getTextSize();
-            tabTemp = HomeData.degrees(wx.temp);
-            tabTempW = lQuote.measureText(tabTemp);
-        }
-        String symbol = Symbols.weather(wx.code, wx.isDay);
-        float size = 24 * k, sw = Symbols.width(getContext(), symbol, size), halfCap = Ui.halfCap(lQuote);
-        float base = (L_TABBAR_TOP + L_TABBAR_H / 2) * k + halfCap;
-        float x = CONTENT_R * k - tabTempW - 8 * k - sw;
-        Symbols.draw(getContext(), c, symbol, x + sw / 2, base - halfCap, size, Ui.alpha(tone(0xB38E8E93, 0x8CFFFFFF), fade));
+        float halfCap = Ui.halfCap(lQuote), base = (L_TABBAR_TOP + L_TABBAR_H / 2) * k + halfCap;
+        float right = CONTENT_R * k;
         int textColor = lQuote.getColor();
         lQuote.setColor(Ui.alpha(textColor, fade));
-        c.drawText(tabTemp, x + sw + 8 * k, base, lQuote);
+        if (weather) {
+            if (data.weatherAt != tabTempAt || Prefs.version != tabTempPrefs || lQuote.getTextSize() != tabTempSize) {
+                tabTempAt = data.weatherAt;
+                tabTempPrefs = Prefs.version;
+                tabTempSize = lQuote.getTextSize();
+                tabTemp = HomeData.degrees(wx.temp);
+                tabTempW = lQuote.measureText(tabTemp);
+            }
+            String symbol = Symbols.weather(wx.code, wx.isDay);
+            float size = 24 * k, sw = Symbols.width(getContext(), symbol, size);
+            float x = right - tabTempW - 8 * k - sw;
+            Symbols.draw(getContext(), c, symbol, x + sw / 2, base - halfCap, size, Ui.alpha(tone(0xB38E8E93, 0x8CFFFFFF), fade));
+            c.drawText(tabTemp, x + sw + 8 * k, base, lQuote);
+            right = x - 36 * k;
+        }
+        // The next calendar event, to the left of the temperature: "Today 18:00 · Dentist".
+        if (!nextEvent.isEmpty()) {
+            float room = right - topRects[TABS - 1].right - 48 * k;
+            if (!nextEvent.equals(eventSource) || room != eventRoom || lQuote.getTextSize() != eventSize) {
+                eventSource = nextEvent;
+                eventRoom = room;
+                eventSize = lQuote.getTextSize();
+                fitPaint.set(lQuote);
+                eventFit = room <= 0 ? "" : TextUtils.ellipsize(nextEvent, fitPaint, room, TextUtils.TruncateAt.END).toString();
+                eventW = lQuote.measureText(eventFit);
+            }
+            c.drawText(eventFit, right - eventW, base, lQuote);
+        }
         lQuote.setColor(textColor);
     }
+
+    private String eventSource = "", eventFit = "";
+    private float eventRoom, eventSize, eventW;
 
     private boolean picksOn() {
         return Recs.hasKey(getContext());

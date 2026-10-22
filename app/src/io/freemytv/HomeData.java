@@ -137,6 +137,12 @@ final class HomeData {
     final double[] changes = {Double.NaN, Double.NaN, Double.NaN, Double.NaN};
     volatile long pricesAt, weatherAt;
     volatile Weather weather = new Weather();
+    /** The calendar's next week (Agenda), when calendar_ics is set; eventsAt = when it was fetched. */
+    volatile List<Agenda.Event> events = new ArrayList<>();
+    volatile long eventsAt;
+    private volatile boolean fetchingEvents;
+    private volatile long eventsFailedAt;
+    private static final long EVENTS_EVERY = 15 * 60_000L;
 
     private final SharedPreferences cache;
     private final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -160,6 +166,7 @@ final class HomeData {
                 weather = parseWeather(w);
                 weatherAt = cache.getLong("weatherAt", 0);
             }
+            // The calendar itself isn't cached on disk: it's private, and it comes back within seconds.
         } catch (Exception ignored) {}
     }
 
@@ -213,6 +220,31 @@ final class HomeData {
                 }
             });
         }
+        if (Agenda.on() && !fetchingEvents && (now - eventsAt > EVENTS_EVERY || now < eventsAt) && !failedRecently(eventsFailedAt, now)) {
+            fetchingEvents = true;
+            io.execute(() -> {
+                try {
+                    events = Agenda.parse(get(Config.CALENDAR_ICS.trim()), System.currentTimeMillis());
+                    eventsAt = System.currentTimeMillis();
+                    notifyListeners();
+                } catch (Exception e) {
+                    eventsFailedAt = System.currentTimeMillis();
+                    // Never the message of other errors: some carry the address, which is a secret.
+                    String m = String.valueOf(e.getMessage());
+                    AppLog.w("calendar: " + (m.startsWith("HTTP ") ? m : e.getClass().getSimpleName()));
+                } finally {
+                    fetchingEvents = false;
+                }
+            });
+        }
+    }
+
+    /** Past events drop off without fetching again: called every minute by the screen. Main thread. */
+    void dropPastEvents() {
+        long now = System.currentTimeMillis();
+        List<Agenda.Event> left = new ArrayList<>();
+        for (Agenda.Event e : events) if (Math.max(e.end, e.start + 1) > now) left.add(e);
+        if (left.size() != events.size()) events = left;
     }
 
     private static boolean failedRecently(long at, long now) {

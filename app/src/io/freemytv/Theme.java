@@ -17,7 +17,9 @@ final class Theme {
     // iOS's semantic colours; the secondary label at 80% (iOS's 60% is under 4.5:1 on white).
     static final int LABEL = 0xFF000000, LABEL_2 = 0xCC3C3C43, WIDGET = 0xFFFFFFFF, RED = 0xFFD70015;
     static final int LABEL_DARK = 0xFFFFFFFF, LABEL_2_DARK = 0x99EBEBF5, WIDGET_DARK = 0xFF1C1C1E, RED_DARK = 0xFFFF453A;
-    static final int[] SKY_DAY = {0xFF2F6FD0, 0xFF1F55B0}, SKY_NIGHT = {0xFF1F3366, 0xFF0E1A38};
+    // Secondary text straight on the wallpaper (no glass behind it): opaque, for 4.5:1 on its most saturated blobs.
+    static final int ON_WALL_2 = 0xFF3C3C43, ON_WALL_2_DARK = 0xFFC7C7CC;
+    static final int[] SKY_DAY ={0xFF2F6FD0, 0xFF1F55B0}, SKY_NIGHT = {0xFF1F3366, 0xFF0E1A38};
     static final int[] EVENTS = {0xFF5E5CE6, 0xFF30B0C7, 0xFFFF9F0A};
     static final int CLOCK_HAND = 0xFFFF9500;
 

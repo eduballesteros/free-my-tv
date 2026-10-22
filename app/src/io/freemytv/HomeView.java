@@ -98,7 +98,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final float L_TALL_W = 320, L_CARD_GAP = 40, L_BUTTON = 68, L_BUTTON_GAP = 20, L_BUTTON_CY = 103;
     private static final float L_PLATTER_TOP = 814, L_TILE_H = 126;
     private static final float L_DATE_BASE = 330, L_CLOCK_BASE = 540, L_WEATHER_BASE = 626, L_QUOTES_BASE = 694;
-    private static final int L_INK = 0xFF1D1D1F, L_DIM = 0xFF6E6E73, L_FAINT = 0xFF8E8E93;
+    // Glass: iOS's label colours; the secondary ones are opaque, for 4.5:1 straight on the wallpaper's blobs.
+    private static final int L_INK = Theme.LABEL, L_DIM = Theme.ON_WALL_2, L_FAINT = Theme.ON_WALL_2;
     private static String[] tabs;
     private static int tabsGeneration = -1;
     private static final String[] TAB_KIND = {null, "movie", "tv"};
@@ -414,7 +415,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             topRects[i] = new RectF();
         }
         for (int i = 0; i < MAX_CARDS; i++) {
-            cardFocus[i] = new Spring(0.32f, 0.78f, 0);
+            cardFocus[i] = Theme.focus();
             cardRects[i] = new RectF();
             cardBase[i] = new RectF();
         }
@@ -615,20 +616,24 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         clockPaint.setLetterSpacing(-0.01f);
         for (Paint p : new Paint[] {labelPaint, titlePaint, metaPaint, clockPaint}) p.setShadowLayer(22 * k, 0, 2 * k, 0x59000000);
         lTitle = Ui.text(Ui.displaySemibold, 76 * k, L_INK);
-        lTitle.setLetterSpacing(0.004f);
-        lTab = Ui.text(Ui.medium, 30 * k, L_DIM);
+        lTitle.setLetterSpacing(Theme.TITLE_TRACK);
+        lTab = Ui.text(Ui.medium, Theme.BODY * k, L_DIM);
+        lTab.setLetterSpacing(Theme.BODY_TRACK);
         lHeadClock = Ui.numbers(Ui.light, 84 * k, L_INK);
         lHeadClock.setLetterSpacing(-0.01f);
-        lGreeting = Ui.text(Ui.displaySemibold, 36 * k, L_INK);
-        lGreeting.setLetterSpacing(0.004f);
-        lHeadDate = Ui.text(Ui.medium, 27 * k, L_DIM);
+        lGreeting = Ui.text(Ui.displaySemibold, Theme.HEADLINE * k, L_INK);
+        lGreeting.setLetterSpacing(Theme.HEADLINE_TRACK);
+        lHeadDate = Ui.text(Ui.regular, Theme.BODY * k, L_DIM);
+        lHeadDate.setLetterSpacing(Theme.BODY_TRACK);
         headingMinute = -1;
-        lTabOn = Ui.text(Ui.semibold, 30 * k, L_INK);
-        lCardTitle = Ui.text(Ui.semibold, 31 * k, L_INK);
-        lCardTitle.setLetterSpacing(0.012f);
-        lCardMeta = Ui.text(Ui.medium, 25 * k, L_DIM);
-        lQuote = Ui.numbers(Ui.regular, 21 * k, L_FAINT);
-        lTip = Ui.text(Ui.semibold, 25 * k, L_INK);
+        lTabOn = Ui.text(Ui.semibold, Theme.BODY * k, L_INK);
+        lTabOn.setLetterSpacing(Theme.BODY_TRACK);
+        lCardTitle = Ui.text(Ui.semibold, Theme.BODY * k, L_INK);
+        lCardTitle.setLetterSpacing(Theme.BODY_TRACK);
+        lCardMeta = Ui.text(Ui.regular, Theme.BODY * k, L_DIM);
+        lCardMeta.setLetterSpacing(Theme.BODY_TRACK);
+        lQuote = Ui.numbers(Ui.regular, Theme.BODY * k, L_FAINT);
+        lTip = Ui.text(Ui.semibold, Theme.BODY * k, L_INK);
         lTip.setTextAlign(Paint.Align.CENTER);
         lDate = Ui.text(Ui.semibold, 34 * k, L_DIM);
         lClock = Ui.numbers(Ui.light, 200 * k, L_INK);
@@ -997,16 +1002,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     /** Text colors for the current night value (dark by day, white at night). */
     private void applyTone() {
-        lTitle.setColor(tone(L_INK, WHITE));
-        lHeadClock.setColor(tone(L_INK, WHITE));
-        lGreeting.setColor(tone(L_INK, WHITE));
-        lHeadDate.setColor(tone(L_DIM, 0xFF98989D));
-        lTab.setColor(tone(L_DIM, 0xFF8E8E93));
-        lTabOn.setColor(tone(L_INK, WHITE));
-        lCardTitle.setColor(tone(L_INK, WHITE));
-        lCardMeta.setColor(tone(L_DIM, 0xFF98989D));
-        lQuote.setColor(tone(L_FAINT, 0xB8FFFFFF));
-        lTip.setColor(tone(L_INK, WHITE));
+        lTitle.setColor(tone(L_INK, Theme.LABEL_DARK));
+        lHeadClock.setColor(tone(L_INK, Theme.LABEL_DARK));
+        lGreeting.setColor(tone(L_INK, Theme.LABEL_DARK));
+        lHeadDate.setColor(tone(L_DIM, Theme.ON_WALL_2_DARK));
+        lTab.setColor(tone(L_DIM, Theme.ON_WALL_2_DARK));
+        lTabOn.setColor(tone(L_INK, Theme.LABEL_DARK));
+        lCardTitle.setColor(tone(L_INK, Theme.LABEL_DARK));
+        lCardMeta.setColor(tone(L_DIM, Theme.ON_WALL_2_DARK));
+        lQuote.setColor(tone(L_FAINT, Theme.ON_WALL_2_DARK));
+        lTip.setColor(tone(L_INK, Theme.LABEL_DARK));
         lDate.setColor(tone(L_DIM, 0xFF98989D));
         lClock.setColor(tone(L_INK, WHITE));
         lWeather.setColor(tone(L_DIM, 0xFF98989D));
@@ -3267,7 +3272,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         Recs.Pick p = i < cards.size() ? cards.get(i) : null;
         if (p == null && (tab == RECENT || youtubeTab(tab))) return;   // fewer: no empty placeholders
         if (cardRects[i].right < -40 * k || cardRects[i].left > w + 40 * k) return;          // scrolled off screen
-        float v = cardFocus[i].value, f = Ui.clamp(v), s = 1 + 0.05f * v;
+        float v = cardFocus[i].value, f = Ui.clamp(v), s = 1 + (Theme.FOCUS_SCALE - 1) * v;
+        // While the cards have the focus, the others are at 80% (Glass).
+        float dim = zone == Z_CARDS ? Theme.FOCUS_DIM + (1 - Theme.FOCUS_DIM) * f : 1;
         float bw = base.width(), bh = base.height(), r0 = 18 * k;
         float cx = base.centerX(), cy = base.centerY() - 6 * k * v;
         cell.set(cx - bw * s / 2, cy - bh * s / 2, cx + bw * s / 2, cy + bh * s / 2);
@@ -3276,8 +3283,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         c.translate(cx, cy);
         c.scale(s, s);
         tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
-        tmp.offset(0, (10 + 14 * f) * k);
-        shadowDeep.setColor(Ui.alpha(0xFF000000, tone(0.14f, 0.32f) + tone(0.2f, 0.28f) * f));
+        tmp.offset(0, (10 + (Theme.FOCUS_SHADOW_Y - 10) * f) * k * 0.6f);
+        shadowDeep.setColor(Ui.alpha(0xFF000000, (tone(0.14f, 0.32f) + (Theme.FOCUS_SHADOW_ALPHA - 0.14f) * f) * dim));
         shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         c.restore();
         Recent.App app = p != null && APP_PICK.equals(p.kind) ? recentApps.get(p.pkg) : null;
@@ -3291,10 +3298,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         } else if (app != null) {
             drawAppArt(c, app, cell, r);
         } else if (img != null) {
+            bitmapPaint.setAlpha(Math.round(255 * dim));
+            imageFill.setAlpha(Math.round(255 * dim));
             roundImage(c, img, cell, r);
+            bitmapPaint.setAlpha(255);
+            imageFill.setAlpha(255);
         } else {
             fill.setShader(null);
-            fill.setColor(tone(0xFFDADADF, 0xFF2C2C2E));
+            fill.setColor(Ui.alpha(tone(0xFFDADADF, 0xFF2C2C2E), dim));
             c.drawRoundRect(cell, r, r, fill);
         }
         if (f > 0.01f) {
@@ -3326,12 +3337,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.restore();
         }
         if (p == null) return;
+        int titleColor = lCardTitle.getColor(), metaColor = lCardMeta.getColor();
+        lCardTitle.setColor(Ui.alpha(titleColor, dim));
+        lCardMeta.setColor(Ui.alpha(metaColor, dim));
         fitPaint.set(lCardTitle);
         c.drawText(TextUtils.ellipsize(p.title, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + 46 * k, lCardTitle);
         if ((i == 0 || app != null || video != null) && p.meta != null && !p.meta.isEmpty()) {
             fitPaint.set(lCardMeta);
-            c.drawText(TextUtils.ellipsize(p.meta, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + 80 * k, lCardMeta);
+            c.drawText(TextUtils.ellipsize(p.meta, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + 86 * k, lCardMeta);
         }
+        lCardTitle.setColor(titleColor);
+        lCardMeta.setColor(metaColor);
     }
 
     /** A Recent card: the app's TV art, centered on its own background color, so it reads as the app's poster. */

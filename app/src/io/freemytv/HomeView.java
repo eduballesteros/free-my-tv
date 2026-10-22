@@ -231,6 +231,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private long weatherLineAt = -1;
     private int weatherLinePrefs = -1;
     private String weatherLineLanguage = "";
+    private String tabTemp = "";
+    private long tabTempAt = -1;
+    private int tabTempPrefs = -1;
+    private float tabTempSize, tabTempW;
     private long clockMinute = -1;
     private boolean okDown, backDown;
 
@@ -2719,6 +2723,33 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < 3; i++) if (i != top) drawLightCard(c, i);
         if (top >= 0) drawLightCard(c, top);
         if (HomeData.coinCount() > 0) drawQuotes(c);
+        else drawTabWeather(c);
+    }
+
+    /** Without quotes, the temperature in their place: weather symbol and degrees at the right end of the tab row. */
+    private void drawTabWeather(Canvas c) {
+        HomeData.Weather wx = data.weather;
+        if (!Prefs.weather() || Double.isNaN(wx.temp)) return;
+        // Like the quotes, it fades out while a corner button's name shows in this row.
+        float fade = 1;
+        for (int i = 3; i < 6; i++) fade = Math.min(fade, 1 - Ui.clamp(topFocus[i].value));
+        if (fade <= 0.01f) return;
+        if (data.weatherAt != tabTempAt || Prefs.version != tabTempPrefs || lQuote.getTextSize() != tabTempSize) {
+            tabTempAt = data.weatherAt;
+            tabTempPrefs = Prefs.version;
+            tabTempSize = lQuote.getTextSize();
+            tabTemp = HomeData.degrees(wx.temp);
+            tabTempW = lQuote.measureText(tabTemp);
+        }
+        String symbol = Symbols.weather(wx.code, wx.isDay);
+        float size = 24 * k, sw = Symbols.width(getContext(), symbol, size), halfCap = Ui.halfCap(lQuote);
+        float base = (L_TABBAR_TOP + L_TABBAR_H / 2) * k + halfCap;
+        float x = CONTENT_R * k - tabTempW - 8 * k - sw;
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, base - halfCap, size, Ui.alpha(tone(0xB38E8E93, 0x8CFFFFFF), fade));
+        int textColor = lQuote.getColor();
+        lQuote.setColor(Ui.alpha(textColor, fade));
+        c.drawText(tabTemp, x + sw + 8 * k, base, lQuote);
+        lQuote.setColor(textColor);
     }
 
     private boolean picksOn() {

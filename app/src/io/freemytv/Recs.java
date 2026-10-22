@@ -34,7 +34,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Home screen picks ("This morning / afternoon / tonight"): what's trending this week plus recent releases, only from
+ * Home screen picks ("This morning / afternoon / tonight"): what's trending this week plus the most popular, only from
  * the streaming apps installed on the TV (Netflix, Prime Video, Disney+, Max, Apple TV, Okko, Hulu, Paramount+, Peacock,
  * Globoplay...), via TMDB (an open movie database that knows what streams where in each country). Three per hour.
  * "Watch" opens the service's app.
@@ -413,20 +413,18 @@ final class Recs {
                 if (pick.pkg != null) (kind.equals("movie") ? hotMovies : hotShows).add(pick);
             }
         }
-        // 2. Recent releases on the TV's services: movies from the past year and shows with a new episode in the
-        //    past 3 months.
-        JSONArray movies = get("/discover/movie?vote_count.gte=30&primary_release_date.gte=" + day(-365)
-                + "&primary_release_date.lte=" + day(0) + common).getJSONArray("results");
-        JSONArray shows = get("/discover/tv?vote_count.gte=20&air_date.gte=" + day(-90) + "&air_date.lte=" + day(0)
-                + common).getJSONArray("results");
-        List<Pick> newMovies = new ArrayList<>(), newShows = new ArrayList<>();
-        for (int i = 0; i < movies.length(); i++) add(newMovies, movies.getJSONObject(i), "movie");
-        for (int i = 0; i < shows.length(); i++) add(newShows, shows.getJSONObject(i), "tv");
-        // Trending first, then the new releases; movies and shows alternating, without repeats, up to 24.
+        // 2. The most popular on the TV's services right now, only well-known titles (enough votes): their tops, not
+        //    obscure new releases.
+        JSONArray movies = get("/discover/movie?vote_count.gte=300" + common).getJSONArray("results");
+        JSONArray shows = get("/discover/tv?vote_count.gte=150" + common).getJSONArray("results");
+        List<Pick> topMovies = new ArrayList<>(), topShows = new ArrayList<>();
+        for (int i = 0; i < movies.length(); i++) add(topMovies, movies.getJSONObject(i), "movie");
+        for (int i = 0; i < shows.length(); i++) add(topShows, shows.getJSONObject(i), "tv");
+        // Trending first, then the services' tops; movies and shows alternating, without repeats, up to 24.
         List<Pick> list = new ArrayList<>();
         java.util.Set<String> seen = new java.util.HashSet<>();
         alternate(list, seen, hotMovies, hotShows, 24);
-        alternate(list, seen, newMovies, newShows, 24);
+        alternate(list, seen, topMovies, topShows, 24);
         if (list.isEmpty()) throw new IOException("TMDB returned no recommendations");
         picks = list;
         period = p;
@@ -450,13 +448,6 @@ final class Recs {
             if (i < a.size() && seen.add(key(a.get(i)))) out.add(a.get(i));
             if (i < b.size() && out.size() < max && seen.add(key(b.get(i)))) out.add(b.get(i));
         }
-    }
-
-    /** The date `offset` days from today, as "2026-10-19" (negative = in the past). */
-    private static String day(int offset) {
-        Calendar cal = Calendar.getInstance();
-        cal.add(Calendar.DAY_OF_YEAR, offset);
-        return String.format(Locale.US, "%04d-%02d-%02d", cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1, cal.get(Calendar.DAY_OF_MONTH));
     }
 
     private static void add(List<Pick> list, JSONObject o, String kind) {

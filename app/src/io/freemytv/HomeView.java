@@ -1175,7 +1175,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             tileSlide = new Spring[list.size()];
             tileRects = new RectF[list.size()];
             for (int i = 0; i < tileFocus.length; i++) {
-                tileFocus[i] = new Spring(0.34f, 0.74f, 0);
+                tileFocus[i] = Theme.focus();
                 tileSlide[i] = new Spring(0.32f, 0.86f, 0);
                 tileRects[i] = new RectF();
             }
@@ -1187,36 +1187,60 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         platter.invalidate();
     }
 
+    // The dock (Glass): squircle icons on thin glass, its bottom on the safe area; room under the icons for the focused
+    // one's name (as on tvOS, the only name shown there).
+    private static final float DOCK_PAD_X = 32, DOCK_PAD_TOP = 24, DOCK_PAD_BOTTOM = 50;
+
     private void layoutShelf() {
         int n = shelf.size();
-        float pad = SHELF_PAD * k, gap = TILE_GAP * k;
-        float full = (CONTENT_R - MARGIN) * k;
-        // Tiles in the TV banners' own 16:9, so an app's art is never stretched; never taller than L_TILE_H. The glass
-        // keeps its bottom edge, so with more apps it only gets lower.
-        float tw = Math.min(L_TILE_H * 16f / 9 * k, (full - Math.max(0, n - 1) * gap) / Math.max(1, n));
-        float th = tw * 9f / 16;
-        float width = n * tw + Math.max(0, n - 1) * gap, left = (w - width) / 2f;
-        float top = (L_PLATTER_TOP + L_TILE_H) * k - th;
-        platterRect.set(left - pad, top, left + width + pad, top + th + 2 * pad);
-        float x = left, y = top + pad;
+        float size = Theme.ICON_DOCK * k, gap = Theme.ICON_DOCK_GAP * k;
+        float width = n * size + Math.max(0, n - 1) * gap, left = (w - width) / 2f;
+        float bottom = (1080 - Theme.SAFE_Y) * k, top = bottom - (DOCK_PAD_TOP + DOCK_PAD_BOTTOM) * k - size;
+        platterRect.set(left - DOCK_PAD_X * k, top, left + width + DOCK_PAD_X * k, bottom);
+        float x = left, y = top + DOCK_PAD_TOP * k;
         for (int i = 0; i < n; i++) {
-            tileRects[i].set(x, y, x + tw, y + th);
-            x += tw + gap;
+            tileRects[i].set(x, y, x + size, y + size);
+            x += size + gap;
         }
         crispLogos.clear();
+        dockSpecular = null;
+    }
+
+    private LinearGradient dockSpecular;
+
+    /** A Glass panel's own light: the 1 px inner edge, the bright line along the top and the highlight below it. */
+    private void specular(Canvas c, RectF r, float radius, LinearGradient top, float alpha) {
+        fill.setShader(top);
+        fill.setAlpha(Math.round(255 * alpha));
+        c.drawRoundRect(r, radius, radius, fill);
+        fill.setShader(null);
+        fill.setAlpha(255);
+        border.setStyle(Paint.Style.STROKE);
+        border.setStrokeWidth(Math.max(1, k));
+        border.setColor(Ui.alpha(tone(Theme.EDGE, Theme.EDGE_DARK), alpha));
+        tmp.set(r);
+        tmp.inset(0.5f * k, 0.5f * k);
+        c.drawRoundRect(tmp, radius, radius, border);
+        border.setColor(Ui.alpha(Theme.SPECULAR_LINE, alpha));
+        c.drawLine(r.left + radius, r.top + 1.5f * k, r.right - radius, r.top + 1.5f * k, border);
     }
 
     /** Shelf layer: the glass bar and its shadow (it only changes with the background). */
     private void drawPlatter(Canvas c) {
         if (shelf.isEmpty()) return;
-        float radius = (TILE_RADIUS + SHELF_PAD) * k;
+        float radius = Theme.DOCK_RADIUS * k;
         tmp.set(platterRect);
         tmp.offset(0, 18 * k);
-        shadow.setColor(tone(0x1F000000, 0x52000000));
+        shadow.setColor(tone(0x33102040, 0x73000000));
         shadows.draw(c, tmp, radius, SHADOW_BLUR * k, shadow);
-        // White glass by day; smoked glass at night.
-        scene.liquid(c, platterRect, radius, tone(0xFFFFFFFF, SMOKE), tone(0.42f, 0.12f), tone(0.03f, 0.08f),
+        // Thin glass: the wallpaper shows through, a little lighter by day and smoked at night.
+        scene.liquid(c, platterRect, radius, tone(0xFFFFFFFF, 0xFF28282E), tone(0.30f, 0.34f), tone(0.03f, 0.06f),
                 tone(30, 34) * k, tone(22, 28) * k, tone(0.65f, 0.95f), 1);
+        if (dockSpecular == null) {
+            dockSpecular = new LinearGradient(0, platterRect.top, 0, platterRect.top + platterRect.height() * Theme.SPECULAR_TO,
+                    Theme.SPECULAR_TOP, 0x00FFFFFF, Shader.TileMode.CLAMP);
+        }
+        specular(c, platterRect, radius, dockSpecular, 1);
     }
 
     /** The quotes row's text and sizes, for one set of coins, prices and text size. */
@@ -1334,6 +1358,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      */
     private void drawShelfTile(Canvas c, int i) {
         HomeApps.Item it = shelf.get(i);
+        if (it.icon != null) {
+            drawDockIcon(c, i, it);
+            return;
+        }
         // Lifted to be moved: a little bigger than focused, with a deeper shadow.
         float l = i == liftIndex ? Math.max(0, moveLift.value) : 0;
         float f = tileFocus[i].value, fc = Ui.clamp(f), s = 1 + FOCUS_GROW * f + LIFT_GROW * l;
@@ -1401,6 +1429,58 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (it.tile != null) roundImage(c, it.tile, cell, r);
         }
     }
+
+    /**
+     * A dock icon, Glass focus (tvOS): it grows 8% and rises (a deeper, lower shadow), gains a white rim and a diagonal
+     * sheen, and its name shows under it; while the dock has the focus, the other icons are at 80%.
+     */
+    private void drawDockIcon(Canvas c, int i, HomeApps.Item it) {
+        float l = i == liftIndex ? Math.max(0, moveLift.value) : 0;
+        float f = tileFocus[i].value, fc = Ui.clamp(f), s = 1 + (Theme.FOCUS_SCALE - 1) * f + LIFT_GROW * l;
+        float alpha = zone == Z_SHELF && !reordering ? Theme.FOCUS_DIM + (1 - Theme.FOCUS_DIM) * fc : 1;
+        RectF base = tileRects[i];
+        float size = base.width(), cx = base.centerX(), cy = base.centerY(), r0 = Theme.squircleRadius(size);
+        cell.set(cx - size * s / 2, cy - size * s / 2, cx + size * s / 2, cy + size * s / 2);
+        c.save();
+        c.translate(cx, cy);
+        c.scale(s, s);
+        tmp.set(-size / 2, -size / 2, size / 2, size / 2);
+        tmp.offset(0, (8 + (Theme.FOCUS_SHADOW_Y - 8) * f + 6 * l) * k * 0.5f);
+        shadowDeep.setColor(Ui.alpha(0xFF000000, (tone(0.16f, 0.32f) + (Theme.FOCUS_SHADOW_ALPHA - 0.16f) * fc) * alpha));
+        shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
+        c.restore();
+        bitmapPaint.setAlpha(Math.round(255 * alpha));
+        c.drawBitmap(it.icon, null, cell, bitmapPaint);
+        bitmapPaint.setAlpha(255);
+        if (fc > 0.01f) {
+            if (iconSheen == null || iconSheenSize != size) {
+                iconSheenSize = size;
+                iconSheen = new LinearGradient(-size / 2, -size / 2, size * 0.1f, size * 0.25f,
+                        Ui.alpha(0xFFFFFFFF, Theme.SHEEN), 0x00FFFFFF, Shader.TileMode.CLAMP);
+            }
+            c.save();
+            c.translate(cx, cy);
+            c.scale(s, s);
+            tmp.set(-size / 2, -size / 2, size / 2, size / 2);
+            sheen.setShader(iconSheen);
+            sheen.setAlpha(Math.round(255 * fc));
+            c.drawRoundRect(tmp, r0, r0, sheen);
+            sheen.setAlpha(255);
+            rim.setShader(null);
+            rim.setStyle(Paint.Style.STROKE);
+            rim.setColor(Ui.alpha(Theme.RIM_COLOR, fc));
+            rim.setStrokeWidth(Theme.RIM * k / s);
+            c.drawRoundRect(tmp, r0, r0, rim);
+            c.restore();
+            // The name under the focused icon, inside the dock.
+            lTip.setAlpha(Math.round(255 * fc));
+            c.drawText(it.label, cx, platterRect.bottom - 14 * k, lTip);
+            lTip.setAlpha(255);
+        }
+    }
+
+    private LinearGradient iconSheen;
+    private float iconSheenSize;
 
     /**
      * `image` stretched over `cell`, with corners of radius `r`. Android 12+ clips to the rounded shape; on Android 8 to

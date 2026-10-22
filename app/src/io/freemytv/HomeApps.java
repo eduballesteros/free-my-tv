@@ -11,6 +11,7 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
+import android.graphics.BitmapShader;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.LinearGradient;
@@ -66,6 +67,7 @@ final class HomeApps {
         String uri;         // opens this address in the app instead of the app's home (a title's page)
         String symbol;      // icon for the shortcuts and special cards
         Bitmap tile;        // 16:9 card (apps and specials)
+        Bitmap icon;        // the Glass squircle icon (dock, All Apps); null = none, the card is used
         Bitmap logo;        // colored logo with no background (shelf); null = use the card
         Bitmap logoDark;    // version for a light background (YouTube's white icon), if any
         float logoInk;      // fraction of the logo with ink (thin logos are drawn larger, with the same "weight")
@@ -94,7 +96,7 @@ final class HomeApps {
         {"globoplay", "Globoplay", "com.globo.globotv", "FF5A1F", "tint", "1"},
         {"spotify", "Spotify", "com.spotify.tv.android", "1DB954", "", "1"},
     };
-    static final int MAX_SHELF = 8;
+    static final int MAX_SHELF = 5;   // the dock: five favourites (Glass)
     /** Live TV apps of some brands (the antenna's channels open through the standard Android request first). */
     static final String[] LIVE_TV_APPS = {"com.tcl.tv", "com.google.android.tv", "com.mediatek.wwtv.tvcenter", "com.sony.dtv.tvx",
             "com.smartdevice.livetv", "com.mediatek.tv.oneworld.tvcenter"};
@@ -150,6 +152,7 @@ final class HomeApps {
                 if (it.logoDark == null && it.logo != null && LIGHT_TILES.contains(d[0])) it.logoDark = inkOnLightCached(d[0], it.logo);
                 it.logoScale = Float.parseFloat(d[5]);
             }
+            it.icon = squircleIcon(c, pkg);
             items.add(it);
         }
         return items;
@@ -866,6 +869,76 @@ final class HomeApps {
             icon.draw(canvas);
         }
         return b;
+    }
+
+    /** The size the squircle icons are made at (the dock scales them down, always to a smaller size). */
+    static final int ICON_PX = 256;
+    private static Path squirclePath;
+
+    /** A continuous-corner square (superellipse, n = 5), the shape of the Glass icons, at ICON_PX. */
+    static synchronized Path squircle() {
+        if (squirclePath != null) return squirclePath;
+        Path p = new Path();
+        float r = ICON_PX / 2f;
+        for (int i = 0; i < 160; i++) {
+            double a = i / 160.0 * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+            float x = (float) (r + r * Math.signum(c) * Math.pow(Math.abs(c), 0.4));
+            float y = (float) (r + r * Math.signum(s) * Math.pow(Math.abs(s), 0.4));
+            if (i == 0) p.moveTo(x, y); else p.lineTo(x, y);
+        }
+        p.close();
+        squirclePath = p;
+        return p;
+    }
+
+    /**
+     * The app's icon as a Glass squircle: an adaptive icon's layers fill it, as on iOS; an older icon sits on white.
+     * Made once per app (background thread); null if the app has no icon.
+     */
+    static synchronized Bitmap squircleIcon(Context c, String pkg) {
+        String key = "squircle:" + pkg;
+        if (TILES.containsKey(key)) return TILES.get(key);
+        Drawable icon = null;
+        try {
+            PackageManager pm = c.getPackageManager();
+            ApplicationInfo ai = pm.getApplicationInfo(pkg, 0);
+            if (ai.icon != 0) {
+                try {
+                    icon = pm.getResourcesForApplication(ai).getDrawableForDensity(ai.icon, DisplayMetrics.DENSITY_XXXHIGH, null);
+                } catch (PackageManager.NameNotFoundException | RuntimeException ignored) {
+                }
+            }
+            if (icon == null) icon = pm.getApplicationIcon(ai);
+        } catch (PackageManager.NameNotFoundException ignored) {
+        }
+        if (icon == null) return null;
+        int size = ICON_PX;
+        Bitmap b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(b);
+        canvas.drawColor(0xFFFFFFFF);   // a white base: icons with transparent parts don't float on the glass
+        if (icon instanceof AdaptiveIconDrawable) {
+            AdaptiveIconDrawable a = (AdaptiveIconDrawable) icon;
+            int pad = size / 4;   // the layers are 108 dp for a 72 dp visible icon
+            for (Drawable layer : new Drawable[] {a.getBackground(), a.getForeground()}) {
+                if (layer == null) continue;
+                layer.setBounds(-pad, -pad, size + pad, size + pad);
+                layer.draw(canvas);
+            }
+        } else {
+            int s = Math.round(size * 0.68f);
+            icon.setBounds((size - s) / 2, (size - s) / 2, (size + s) / 2, (size + s) / 2);
+            icon.draw(canvas);
+        }
+        // Cut to the squircle: the shape filled with the icon as its texture (antialiased edges; a clip path would
+        // leave them jagged).
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+        fill.setShader(new BitmapShader(b, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP));
+        new Canvas(out).drawPath(squircle(), fill);
+        b.recycle();
+        out.setHasMipMap(true);
+        TILES.put(key, out);
+        return out;
     }
 
     /** Settings and the like: the icon in white on a dark card. */

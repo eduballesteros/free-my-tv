@@ -30,7 +30,7 @@ final class Theme {
 
     // Shapes.
     static final float ICON_RADIUS = 0.22f, WIDGET_RADIUS = 56, DOCK_RADIUS = 64;
-    static final float WIDGET_S = 336, WIDGET_M = 712, WIDGET_H = 336, WIDGET_PAD_X = 34, WIDGET_PAD_Y = 30;
+    static final float WIDGET_S = 336, WIDGET_M = 712, WIDGET_H = 336, WIDGET_PAD_X = 40, WIDGET_PAD_Y = 36;
     static final float ICON_GRID = 150, ICON_GRID_GAP = 66, ICON_DOCK = 132, ICON_DOCK_GAP = 36;
 
     // Focus (tvOS): zoom, a raised shadow, a white rim and a diagonal sheen; the rest of the row at 80%.

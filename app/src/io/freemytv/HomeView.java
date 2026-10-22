@@ -96,7 +96,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
     // Light design (the L_ constants): title, tab bar, three recommendation cards and the shelf.
     // The tab bar is a 68 px capsule; the cards sit on the 5-column grid (the wide one spans 3).
-    private static final float L_TITLE_BASE = 130, L_TABBAR_TOP = 158, L_TABBAR_H = 68, L_CARDS_TOP = 262, L_CARD_H = 442;
+    private static final float L_TITLE_BASE = 130, L_TABBAR_TOP = 182, L_TABBAR_H = 68, L_CARDS_TOP = 286, L_CARD_H = 442;
     private static final float L_TALL_W = 320, L_CARD_GAP = 40, L_BUTTON = 68, L_BUTTON_GAP = 20, L_BUTTON_CY = 103;
     private static final float L_PLATTER_TOP = 814, L_TILE_H = 126;
     private static final float L_DATE_BASE = 330, L_CLOCK_BASE = 540, L_WEATHER_BASE = 626, L_QUOTES_BASE = 694;
@@ -621,11 +621,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lTitle.setLetterSpacing(Theme.TITLE_TRACK);
         lTab = Ui.text(Ui.medium, Theme.BODY * k, L_DIM);
         lTab.setLetterSpacing(Theme.BODY_TRACK);
-        lHeadClock = Ui.numbers(Ui.light, 84 * k, L_INK);
-        lHeadClock.setLetterSpacing(-0.01f);
+        lHeadClock = Ui.numbers(Ui.displaySemibold, 104 * k, L_INK);
+        lHeadClock.setLetterSpacing(Theme.FIGURES_TRACK);
+        lHeadClock.setTextAlign(Paint.Align.CENTER);
         lGreeting = Ui.text(Ui.displaySemibold, Theme.HEADLINE * k, L_INK);
         lGreeting.setLetterSpacing(Theme.HEADLINE_TRACK);
-        lHeadDate = Ui.text(Ui.regular, Theme.BODY * k, L_DIM);
+        lHeadDate = Ui.text(Ui.semibold, Theme.BODY * k, L_DIM);
+        lHeadDate.setTextAlign(Paint.Align.CENTER);
         lHeadDate.setLetterSpacing(Theme.BODY_TRACK);
         headingMinute = -1;
         lTabOn = Ui.text(Ui.semibold, Theme.BODY * k, L_INK);
@@ -660,7 +662,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         wBody.setLetterSpacing(Theme.BODY_TRACK);
         wFigure = Ui.numbers(Ui.light, Theme.FIGURES * k, 0xFFFFFFFF);
         wFigure.setLetterSpacing(Theme.FIGURES_TRACK);
-        wDial = Ui.numbers(Ui.medium, 30 * k, 0xFF000000);
+        wDial = Ui.numbers(Ui.medium, 26 * k, 0xFF000000);
         wDial.setTextAlign(Paint.Align.CENTER);
         wHand.setStyle(Paint.Style.STROKE);
         wHand.setStrokeCap(Paint.Cap.ROUND);
@@ -1021,7 +1023,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Text colors for the current night value (dark by day, white at night). */
     private void applyTone() {
         lTitle.setColor(tone(L_INK, Theme.LABEL_DARK));
-        lHeadClock.setColor(tone(L_INK, Theme.LABEL_DARK));
+        lHeadClock.setColor(Ui.alpha(tone(L_INK, Theme.LABEL_DARK), 0.86f));   // a little translucent, as on iOS
         lGreeting.setColor(tone(L_INK, Theme.LABEL_DARK));
         lHeadDate.setColor(tone(L_DIM, Theme.ON_WALL_2_DARK));
         lTab.setColor(tone(L_DIM, Theme.ON_WALL_2_DARK));
@@ -1805,28 +1807,29 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.drawText(Ui.tr("No weather data right now."), x, top + 120 * k, wBody);
             return;
         }
-        c.drawText(nowTemp, x - Ui.leftBearing(wFigure, nowTemp), top + 40 * k + Ui.cap(wFigure), wFigure);
+        c.drawText(nowTemp, x - Ui.leftBearing(wFigure, nowTemp), top + Ui.cap(wSmall) + 26 * k + Ui.cap(wFigure), wFigure);
         float bottom = r.bottom - Theme.WIDGET_PAD_Y * k;
         String symbol = Symbols.weather(wx.code, wx.isDay);
-        float size = 34 * k, sw = Symbols.width(getContext(), symbol, size);
-        Symbols.draw(getContext(), c, symbol, x + sw / 2, bottom - 40 * k - Ui.cap(wBody) - size / 2 - 6 * k, size, 0xFFFFFFFF);
+        float size = 30 * k, sw = Symbols.width(getContext(), symbol, size), lineBase = bottom - 44 * k;
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, lineBase - Ui.halfCap(wBody), size, 0xFFFFFFFF);
+        x += sw + 12 * k;
         String condition = HomeData.condition(wx.code, wx.isDay);
-        float room = r.width() - 2 * Theme.WIDGET_PAD_X * k;
+        float room = r.right - Theme.WIDGET_PAD_X * k - x;
         if (!condition.equals(conditionSource) || room != conditionRoom) {
             conditionSource = condition;
             conditionRoom = room;
             fitPaint.set(wBody);
             conditionFit = TextUtils.ellipsize(condition, fitPaint, room, TextUtils.TruncateAt.END).toString();
         }
-        c.drawText(conditionFit, x, bottom - 40 * k, wBody);
-        c.drawText(highLow, x, bottom, wBody);
+        c.drawText(conditionFit, x, lineBase, wBody);
+        c.drawText(highLow, r.left + Theme.WIDGET_PAD_X * k, bottom, wBody);
     }
 
     /** iOS's clock widget: a dial with numerals and ticks, white by day and black at night; the hands move each second. */
     private void drawClockWidget(Canvas c, RectF r) {
         int face = tone(0xFFFFFFFF, 0xFF000000), ink = tone(0xFF000000, 0xFFFFFFFF);
         widgetFace(c, r, face, null);
-        float cx = r.centerX(), cy = r.centerY(), radius = r.width() / 2 - 22 * k;
+        float cx = r.centerX(), cy = r.centerY(), radius = r.width() / 2 - 32 * k;
         if (Ui.LEGACY) clockSnapshot.draw(c, r, "dial|" + Float.floatToIntBits(dark()) + "|" + Ui.generation, cc -> drawDial(cc, cx, cy, radius, ink));
         else drawDial(c, cx, cy, radius, ink);
         java.util.Calendar now = clockNow;
@@ -1863,7 +1866,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float half = Ui.halfCap(wDial);
         for (int n = 1; n <= 12; n++) {
             double a = n / 12.0 * Math.PI * 2;
-            c.drawText(DIAL[n], cx + (float) Math.sin(a) * radius * 0.7f, cy - (float) Math.cos(a) * radius * 0.7f + half, wDial);
+            c.drawText(DIAL[n], cx + (float) Math.sin(a) * radius * 0.72f, cy - (float) Math.cos(a) * radius * 0.72f + half, wDial);
         }
     }
 
@@ -1972,10 +1975,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         wSmall.setColor(tone(Theme.RED, Theme.RED_DARK));
         c.drawText(agendaWeekday, x, top + Ui.cap(wSmall), wSmall);
         wFigure.setColor(tone(Theme.LABEL, Theme.LABEL_DARK));
-        c.drawText(agendaToday, x - Ui.leftBearing(wFigure, agendaToday), top + 40 * k + Ui.cap(wFigure), wFigure);
+        c.drawText(agendaToday, x - Ui.leftBearing(wFigure, agendaToday), top + Ui.cap(wSmall) + 26 * k + Ui.cap(wFigure), wFigure);
         wSmall.setColor(0xFFFFFFFF);
         wFigure.setColor(0xFFFFFFFF);
-        float ex = x + 220 * k, line = 38 * k, row = 2 * line + 14 * k;
+        float ex = x + 260 * k, line = 40 * k, row = 2 * line + 40 * k;
         int ink = tone(Theme.LABEL, Theme.LABEL_DARK), ink2 = tone(Theme.LABEL_2, Theme.LABEL_2_DARK);
         if (agendaRows == 0) {
             if (agendaEmptyLayout == null) return;
@@ -1986,10 +1989,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.restore();
             return;
         }
-        for (int j = 0; j < Math.min(3, agendaRows); j++) {
+        for (int j = 0; j < Math.min(2, agendaRows); j++) {
             float y = top + j * row;
             fill.setColor(Theme.EVENTS[j % Theme.EVENTS.length]);
-            c.drawRoundRect(ex, y, ex + 6 * k, y + row - 14 * k, 3 * k, 3 * k, fill);
+            c.drawRoundRect(ex, y, ex + 6 * k, y + row - 40 * k, 3 * k, 3 * k, fill);
             wBody.setColor(ink);
             c.drawText(agendaFit[j], ex + 22 * k, y + Ui.cap(wBody) + 4 * k, wBody);
             wBody.setColor(ink2);
@@ -2042,7 +2045,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         agendaLaidOut = agendaVersion;
         agendaWidth = width;
         agendaSize = wBody.getTextSize();
-        float room = width - 2 * Theme.WIDGET_PAD_X * k - 242 * k;
+        float room = width - 2 * Theme.WIDGET_PAD_X * k - 282 * k;
         agendaEmptyPaint.set(wBody);
         agendaEmptyLayout = agendaEmpty.isEmpty() ? null : StaticLayout.Builder.obtain(agendaEmpty, 0, agendaEmpty.length(),
                 agendaEmptyPaint, Math.max(1, Math.round(room))).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END).build();
@@ -3364,11 +3367,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             String d = Ui.date(now);
             headDate = d.isEmpty() ? d : d.substring(0, 1).toUpperCase(Ui.locale()) + d.substring(1);
         }
-        float x = MARGIN * k - Ui.leftBearing(lHeadClock, headClock), base = L_TITLE_BASE * k;
-        c.drawText(headClock, x, base, lHeadClock);
-        float tx = x + headClockW + 30 * k;
-        c.drawText(greeting, tx, base - 40 * k, lGreeting);
-        c.drawText(headDate, tx, base - 2 * k, lHeadDate);
+        // Centred at the top: the date, then the time under it (iOS's lock screen); the greeting on the left.
+        float dateBase = Theme.SAFE_Y * k + Ui.cap(lHeadDate) + 3 * k;
+        float clockBase = dateBase + 14 * k + Ui.cap(lHeadClock);
+        c.drawText(headDate, w / 2f, dateBase, lHeadDate);
+        c.drawText(headClock, w / 2f, clockBase, lHeadClock);
+        c.drawText(greeting, MARGIN * k - Ui.leftBearing(lGreeting, greeting), clockBase - Ui.cap(lHeadClock) / 2 + Ui.halfCap(lGreeting), lGreeting);
     }
 
     /** "Good morning, Edu" (user_name in config.properties; without it, just "Good morning"), by the hour. */

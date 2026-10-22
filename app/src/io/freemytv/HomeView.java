@@ -33,10 +33,12 @@ import android.view.accessibility.AccessibilityNodeProvider;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.text.SimpleDateFormat;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.concurrent.ExecutorService;
@@ -45,7 +47,7 @@ import java.util.function.Consumer;
 
 /**
  * The home screen, styled after the Apple TV app with the macOS 27 glass:
- *  - at the top left, the "For You" title and the tabs (Explore, Movies, Shows, Recent); at the top right, icon-only glass
+ *  - at the top left, the time (24 h), a greeting for the time of day and the date, and below them the tabs (Explore, Movies, Shows, Recent); at the top right, icon-only glass
  *    buttons (Live TV, HDMI Inputs, Settings), with the focused one's name below it, and the small crypto quotes
  *    (logo + price) at the right end of the tab row;
  *  - three cards with the titles recommended for right now in the selected tab (Recs, from TMDB); the background is
@@ -148,6 +150,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private final Spring[] cardFocus = new Spring[3];
     private final RectF[] cardRects = new RectF[3];
     private final List<HomeApps.Item> lightButtons = new ArrayList<>();
+    private Paint lHeadClock, lGreeting, lHeadDate;
     private Paint lTitle, lTab, lTabOn, lCardTitle, lCardMeta, lQuote, lTip, lDate, lClock, lWeather, lClockQuote;
     private Shader lightGradient;
 
@@ -598,6 +601,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lTitle = Ui.text(Ui.displaySemibold, 76 * k, L_INK);
         lTitle.setLetterSpacing(0.004f);
         lTab = Ui.text(Ui.medium, 30 * k, L_DIM);
+        lHeadClock = Ui.numbers(Ui.light, 84 * k, L_INK);
+        lHeadClock.setLetterSpacing(-0.01f);
+        lGreeting = Ui.text(Ui.displaySemibold, 36 * k, L_INK);
+        lGreeting.setLetterSpacing(0.004f);
+        lHeadDate = Ui.text(Ui.medium, 27 * k, L_DIM);
+        headingMinute = -1;
         lTabOn = Ui.text(Ui.semibold, 30 * k, L_INK);
         lCardTitle = Ui.text(Ui.semibold, 31 * k, L_INK);
         lCardTitle.setLetterSpacing(0.012f);
@@ -707,7 +716,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 refreshHero(false);
                 heroLayer.invalidate();
             }
-            if (!picksOn()) heroLayer.invalidate();
+            heroLayer.invalidate();   // the time at the top left (and the greeting) change with the minute
         }
 
         // Busy: something is moving, or the sheet or the drawer is open.
@@ -969,6 +978,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** Text colors for the current night value (dark by day, white at night). */
     private void applyTone() {
         lTitle.setColor(tone(L_INK, WHITE));
+        lHeadClock.setColor(tone(L_INK, WHITE));
+        lGreeting.setColor(tone(L_INK, WHITE));
+        lHeadDate.setColor(tone(L_DIM, 0xFF98989D));
         lTab.setColor(tone(L_DIM, 0xFF8E8E93));
         lTabOn.setColor(tone(L_INK, WHITE));
         lCardTitle.setColor(tone(L_INK, WHITE));
@@ -2860,8 +2872,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (HomeData.coinCount() > 0) drawQuotes(c);
             return;
         }
-        String hello = Ui.tr("For You");
-        c.drawText(hello, MARGIN * k - Ui.leftBearing(lTitle, hello), L_TITLE_BASE * k, lTitle);
+        drawHeading(c);
         // Text tabs (the selected one in bold, in the main text color); with focus on the tabs, the selected one gets
         // the white pill with a shadow and grows a little (the tvOS focus).
         float focus = Ui.clamp(topFocus[tab].value);
@@ -2941,6 +2952,45 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private String eventSource = "", eventFit = "";
     private float eventRoom, eventSize, eventW;
+
+    // The heading at the top left: the time in light numerals, and next to it the greeting (bold) over the date (dim).
+    // Made again each minute, when the language changes, or with new paints (a new screen size).
+    private String headClock = "", greeting = "", headDate = "";
+    private float headClockW;
+    private long headingMinute = -1;
+    private int headingGeneration = -1;
+    private SimpleDateFormat headClockFormat;
+
+    private void drawHeading(Canvas c) {
+        long now = System.currentTimeMillis();
+        if (now / 60_000 != headingMinute || Ui.generation != headingGeneration) {
+            headingMinute = now / 60_000;
+            headingGeneration = Ui.generation;
+            if (headClockFormat == null) headClockFormat = new SimpleDateFormat("HH:mm", Locale.ROOT);   // always 24 h
+            headClockFormat.setTimeZone(java.util.TimeZone.getDefault());
+            headClock = headClockFormat.format(now);
+            headClockW = lHeadClock.measureText(headClock);
+            greeting = greeting(now);
+            String d = Ui.date(now);
+            headDate = d.isEmpty() ? d : d.substring(0, 1).toUpperCase(Ui.locale()) + d.substring(1);
+        }
+        float x = MARGIN * k - Ui.leftBearing(lHeadClock, headClock), base = L_TITLE_BASE * k;
+        c.drawText(headClock, x, base, lHeadClock);
+        float tx = x + headClockW + 30 * k;
+        c.drawText(greeting, tx, base - 40 * k, lGreeting);
+        c.drawText(headDate, tx, base - 2 * k, lHeadDate);
+    }
+
+    /** "Good morning, Edu" (user_name in config.properties; without it, just "Good morning"), by the hour. */
+    private static String greeting(long now) {
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        cal.setTimeInMillis(now);
+        int hour = cal.get(java.util.Calendar.HOUR_OF_DAY);
+        String name = Config.USER_NAME.trim();
+        if (hour >= 6 && hour < 13) return name.isEmpty() ? Ui.tr("Good morning") : Ui.trf("Good morning, {name}", "name", name);
+        if (hour >= 13 && hour < 21) return name.isEmpty() ? Ui.tr("Good afternoon") : Ui.trf("Good afternoon, {name}", "name", name);
+        return name.isEmpty() ? Ui.tr("Good evening") : Ui.trf("Good evening, {name}", "name", name);
+    }
 
     private boolean picksOn() {
         return Recs.hasKey(getContext());

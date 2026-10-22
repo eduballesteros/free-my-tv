@@ -166,15 +166,15 @@ final class HomeMode {
 
     /**
      * The remote's app buttons (RemoteKeys) need an accessibility service that only filters those keys. It is on only
-     * on TCL, Vestel, KTC and Sony TVs (and Formovie projectors) in Free My TV mode, and goes off with Original. Android turns it off when this app is updated, so the
+     * on TCL, Vestel, KTC and Sony TVs (and Formovie projectors), and on Xiaomi TVs for the Settings button, in Free My TV mode, and goes off with Original. Android turns it off when this app is updated, so the
      * boot check and an update turn it back on.
      */
     static void ensureRemoteService(Context c, long delayMs) {
-        if (RemoteKeys.supported()) ModeJob.schedule(c, ModeJob.REMOTE, null, delayMs);
+        if (RemoteKeys.service()) ModeJob.schedule(c, ModeJob.REMOTE, null, delayMs);
     }
 
     static void ensureRemoteServiceNow(Context app) {
-        if (!RemoteKeys.supported() || !FREE.equals(state(app).optString("mode"))) return;
+        if (!RemoteKeys.service() || !FREE.equals(state(app).optString("mode"))) return;
         try (Adb adb = Adb.connect(app, 10_000, null)) {
             remoteService(app, adb, true);
         } catch (IOException e) {
@@ -297,7 +297,7 @@ final class HomeMode {
             s.put("mode", FREE).put("since", System.currentTimeMillis()).put("homeReverted", false)
                     .put("disabled", new JSONArray(sorted(disabled))).put("setupHome", setupHome);
             save(c, s);
-            if (RemoteKeys.supported()) {
+            if (RemoteKeys.service()) {
                 try {
                     remoteService(c, adb, true);
                 } catch (IOException e) {

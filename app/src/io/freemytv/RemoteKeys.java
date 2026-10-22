@@ -1,9 +1,11 @@
 package io.freemytv;
 
+import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.provider.Settings;
 import android.view.InputDevice;
 import android.view.KeyEvent;
 
@@ -32,8 +34,20 @@ final class RemoteKeys {
     /** Brands whose Netflix button is STEM_1, a global key (MediaTek): only that button is ours. */
     static final boolean STEM_NETFLIX = VESTEL || FORMOVIE;
 
+    /**
+     * Xiaomi's key receiver (partnercustomizer) opens Google TV's settings panel, in launcherx, for the Settings button.
+     * With launcherx off it crashes, and Android then drops every button it handles (Input, the app buttons) until a
+     * reboot (MiTV-MOOR2, Android 11). So the filter takes that button and opens the TV's settings itself.
+     */
+    static final boolean XIAOMI = is("Xiaomi") && !FORMOVIE;
+
     static boolean supported() {
         return TCL || STEM_NETFLIX || KTC || SONY;
+    }
+
+    /** Whether the key filter runs: for the app buttons, or for Xiaomi's Settings button. */
+    static boolean service() {
+        return supported() || XIAOMI;
     }
 
     private static boolean is(String maker) {
@@ -42,6 +56,17 @@ final class RemoteKeys {
 
     /** Opens the app for this key on its first press. True if the key is ours and in use (it is then consumed). */
     static boolean onKey(Context c, KeyEvent e) {
+        if (XIAOMI && e.getKeyCode() == KeyEvent.KEYCODE_SETTINGS) {
+            if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
+                AppLog.w("remote key Settings -> TV settings");
+                try {
+                    c.startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (ActivityNotFoundException ex) {
+                    AppLog.w("no settings app: " + ex.getMessage());
+                }
+            }
+            return true;
+        }
         if (!supported()) return false;
         // BUTTON_3 is also a game controller's button: keys from a gamepad or a joystick are left alone.
         int source = e.getSource();

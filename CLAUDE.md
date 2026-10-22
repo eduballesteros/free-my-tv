@@ -203,6 +203,10 @@ HDMI (Chromecast with Google TV, Google TV Streamer, onn 4K, NVIDIA Shield). Set
   the key to the TV. Sony ships its own Apple TV build, `com.apple.atve.sony.appletv`.
   Xiaomi projectors made by Formovie (Fengmi; L1, MediaTek, Google TV 14 tested) send the same `KEYCODE_STEM_1` for
   Netflix (`RemoteKeys.STEM_NETFLIX`); their YouTube button goes to MediaTek's `GlobalKeyReceiver` and stays with the system.
+  Xiaomi TVs (MiTV-MOOR2, Google TV 11 tested) have no app buttons for us, but the service runs there too
+  (`RemoteKeys.service()`) for one key: `KEYCODE_SETTINGS`, a global key for `com.xiaomi.android.tvsetup.partnercustomizer`,
+  which opens launcherx's settings panel. With launcherx off it crashes, and Android then marks it bad and drops every
+  button it handles (Input, the app buttons) until a reboot, so the filter opens the TV's settings instead.
 - After any change, `./build.sh` must end with `Built FreeMyTV.apk`.
 - LG and Samsung (`web/`): plain ES5 JavaScript and CSS without variables, grid or backdrop-filter, since older TVs
   (webOS 3 and 4, Tizen 3) run a Chromium from 2015 to 2017; only transform and opacity animate. `web/tv.js` is the

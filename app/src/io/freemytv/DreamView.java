@@ -9,6 +9,7 @@ import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.RadialGradient;
 import android.graphics.Rect;
+import android.graphics.RectF;
 import android.graphics.RuntimeShader;
 import android.graphics.Shader;
 import android.os.Handler;
@@ -40,6 +41,17 @@ import java.util.concurrent.Executors;
  * Without photos (no TMDB key, or before the first fetch): the big clock over the night aurora.
  */
 final class DreamView extends View implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
+    /**
+     * Glass: no photos. The wallpaper of the time of day (its dark version: easy on a dark room, white text reads on
+     * it), moving very slowly so nothing stays in place on the panel, and the home screen's lock-screen clock with the
+     * date and the weather, drifting a little too.
+     */
+    private static final boolean GLASS = true;
+    private static final double WALL_PERIOD_S = 900;
+    private Bitmap wallpaper;
+    private int wallpaperMoment = -1;
+    private final Paint wallPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+    private final RectF wallRect = new RectF();
     private static final long SHOW_MS = 30_000, FADE_MS = 3_000, FIRST_MS = 1_600;
     private static final float ZOOM = 0.1f;
     /** Photos 10% larger than the screen (the zoom goes up to 1.1 without upscaling). */
@@ -168,13 +180,17 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         startedAt = clock();
         lastFrame = 0;
         failed.clear();
-        fallback = recs.showcase().isEmpty();
+        fallback = GLASS || recs.showcase().isEmpty();
         data.addListener(this);
-        recs.addListener(this);
         data.refreshIfStale();
-        recs.refreshIfStale();
-        recs.prefetchAll();
-        prepareNext();
+        if (GLASS) {
+            loadWallpaper();
+        } else {
+            recs.addListener(this);
+            recs.refreshIfStale();
+            recs.prefetchAll();
+            prepareNext();
+        }
         handler.postDelayed(tick, 60_000);
         Choreographer.getInstance().postFrameCallback(this);
         invalidate();
@@ -215,7 +231,50 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
     }
 
     @Override public void onRecs() {
-        if (running) prepareNext();
+        if (running && !GLASS) prepareNext();
+    }
+
+    /** The wallpaper of this moment of the day (once per moment, in the background). */
+    private void loadWallpaper() {
+        HomeData.Weather wx = data.weather;
+        final int moment = Wallpaper.moment(System.currentTimeMillis(), wx.sunrise, wx.sunset);
+        if (moment == wallpaperMoment) return;
+        wallpaperMoment = moment;
+        worker.execute(() -> {
+            final Bitmap b = Wallpaper.backdrop(moment).nightImage;
+            handler.post(() -> {
+                wallpaper = b;
+                invalidate();
+            });
+        });
+    }
+
+    /** The Glass screensaver: the wallpaper zooming and panning very slowly, and the clock over it. */
+    private void drawGlass(Canvas canvas, long up) {
+        float t = (up - startedAt) / 1000f;
+        if (wallpaper == null) {
+            canvas.drawRect(0, 0, w, h, black);
+        } else {
+            double phase = 2 * Math.PI * t / WALL_PERIOD_S;
+            float s = 1.12f + 0.04f * (float) Math.sin(phase);
+            float dx = (float) (0.04 * w * Math.sin(phase * 0.7 + 1.1)), dy = (float) (0.04 * h * Math.cos(phase * 0.9));
+            wallRect.set(w / 2f - w * s / 2 + dx, h / 2f - h * s / 2 + dy, w / 2f + w * s / 2 + dx, h / 2f + h * s / 2 + dy);
+            canvas.drawBitmap(wallpaper, null, wallRect, wallPaint);
+        }
+        if (dirty) {
+            Canvas rc = content.beginRecording(w, h);
+            try {
+                drawContent(rc);
+            } finally {
+                content.endRecording();
+            }
+            dirty = false;
+        }
+        double phase = 2 * Math.PI * t / DRIFT_PERIOD_S;
+        content.setTranslationX((float) (40 * k * Math.sin(phase)));
+        content.setTranslationY((float) (26 * k * Math.sin(2 * phase + 0.7)));
+        content.setAlpha(1);
+        content.draw(canvas);
     }
 
     @Override protected void onSizeChanged(int width, int height, int oldWidth, int oldHeight) {
@@ -226,13 +285,14 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
         content.setPosition(0, 0, w, h);
         chrome.setPosition(0, 0, w, h);
         // Without photos (the clock over the aurora).
-        datePaint = Ui.text(Ui.semibold, 36 * k, 0xD9FFFFFF);
+        datePaint = Ui.text(Ui.semibold, Theme.HEADLINE * k, 0xD9FFFFFF);
+        datePaint.setLetterSpacing(Theme.HEADLINE_TRACK);
         datePaint.setTextAlign(Paint.Align.CENTER);
-        clockPaint = Ui.numbers(Ui.thin, 280 * k, 0xF2FFFFFF);
+        clockPaint = Ui.numbers(GLASS ? Ui.displaySemibold : Ui.thin, 260 * k, GLASS ? 0xDBFFFFFF : 0xF2FFFFFF);
         clockPaint.setTextAlign(Paint.Align.CENTER);
-        clockPaint.setLetterSpacing(-0.01f);
-        weatherPaint = Ui.numbers(Ui.medium, 30 * k, 0xC7FFFFFF);
-        weatherDim = Ui.numbers(Ui.regular, 28 * k, 0x80FFFFFF);
+        clockPaint.setLetterSpacing(GLASS ? Theme.FIGURES_TRACK : -0.01f);
+        weatherPaint = Ui.numbers(Ui.medium, Theme.BODY * k, 0xC7FFFFFF);
+        weatherDim = Ui.numbers(Ui.regular, Theme.BODY * k, 0xA6FFFFFF);
         quotePaint = Ui.numbers(Ui.medium, 24 * k, 0x99FFFFFF);
         stalePaint = Ui.text(Ui.regular, 20 * k, 0x59FFFFFF);
         stalePaint.setTextAlign(Paint.Align.CENTER);
@@ -419,8 +479,14 @@ final class DreamView extends View implements Choreographer.FrameCallback, HomeD
             minute = now / 60_000;
             clock = Ui.clock(now);
             date = Ui.date(now);
+            if (!date.isEmpty()) date = date.substring(0, 1).toUpperCase(Ui.locale()) + date.substring(1);
             dirty = true;
             chromeDirty = true;
+        }
+        if (GLASS) {
+            if (dirty) loadWallpaper();   // a new minute: a new moment of the day, now and then
+            drawGlass(canvas, up);
+            return;
         }
         if (running) advance(up);
         if (!glassFor.equals(clock)) buildGlass(clock);

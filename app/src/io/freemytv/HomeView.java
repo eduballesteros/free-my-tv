@@ -60,7 +60,8 @@ import java.util.function.Consumer;
  * Measurements are in a 1920×1080 space (k = width / 1920). The screen is split into layers so the TV's weak GPU only
  * redraws what changed.
  */
-final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener {
+final class HomeView extends ViewGroup implements Choreographer.FrameCallback, HomeData.Listener, Recs.Listener,
+        YouTube.Listener {
     // tvOS grid (Human Interface Guidelines): content inside the safe area, 80 px from the sides and 60 from top and
     // bottom; 40 px between items; 7 columns of 217 px (the apps). The shelf glass extends 36 px past the tiles (the
     // same padding on all four sides) and the tile corners are concentric with it (glass radius = radius + padding).
@@ -101,14 +102,18 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static String[] tabs;
     private static int tabsGeneration = -1;
     private static final String[] TAB_KIND = {null, "movie", "tv"};
-    /** Explore, Movies, Shows and Recent (the apps used last); the three corner buttons follow them in topRects. */
-    private static final int TABS = 4, RECENT = 3;
+    /**
+     * Explore, Movies, Shows, Recent (the apps used last) and, when it is set up, YouTube (your channels' newest videos);
+     * the three corner buttons follow them in topRects.
+     */
+    private static final int TABS = YouTube.configured() ? 5 : 4, RECENT = 3, YOUTUBE = 4;
     private static final int Z_TOP = 4, Z_CARDS = 5;
 
     private final Activity activity;
     private final Scene scene = new Scene();
     private final HomeData data;
     private final Recs recs;
+    private final YouTube youtube;
     private final Click click;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final SharedPreferences ui;
@@ -360,6 +365,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             data.refreshIfStale();
             data.dropPastEvents();
             recs.refreshIfStale();
+            if (YouTube.configured()) youtube.refreshIfStale();
             checkNotices();
             updatePalette();
             checkNight(true);
@@ -373,6 +379,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         activity = a;
         data = HomeData.get(a);
         recs = Recs.get(a);
+        youtube = YouTube.get(a);
         click = new Click(a);
         ui = a.getSharedPreferences("home-ui", Context.MODE_PRIVATE);
         tvInputs = (TvInputManager) a.getSystemService(Context.TV_INPUT_SERVICE);
@@ -429,8 +436,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lastStep = 0;
         data.addListener(this);
         recs.addListener(this);
+        youtube.addListener(this);
         data.refreshIfStale();
         recs.refreshIfStale();
+        if (YouTube.configured()) youtube.refreshIfStale();
         if (tvInputs != null) tvInputs.registerCallback(inputCallback, handler);
         handler.postDelayed(tick, 15_000);
         checkNotices();
@@ -457,6 +466,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         handler.removeCallbacks(reloadSoon);
         data.removeListener(this);
         recs.removeListener(this);
+        youtube.removeListener(this);
         if (tvInputs != null) tvInputs.unregisterCallback(inputCallback);
     }
 
@@ -500,7 +510,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     /** The tab names, made again only when the language changes (they are drawn on every frame). */
     private static String[] tabs() {
         if (tabsGeneration != Ui.generation) {
-            tabs = new String[] {Ui.tr("Explore"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Recent")};
+            tabs = TABS == 5 ? new String[] {Ui.tr("Explore"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Recent"), "YouTube"}
+                    : new String[] {Ui.tr("Explore"), Ui.tr("Movies"), Ui.tr("Shows"), Ui.tr("Recent")};
             tabsGeneration = Ui.generation;
         }
         return tabs;
@@ -2316,8 +2327,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             r = topRects[topIndex];
         } else if (zone == Z_CARDS) {
             Recs.Pick p = cardIndex < cards.size() ? cards.get(cardIndex) : null;
+            if (p != null && YT_LINK.equals(p.kind)) {
+                click.open();
+                youtube.startLink();
+                return;
+            }
             if (p == null || p.pkg == null) return;
-            it = HomeApps.app(p.pkg, APP_PICK.equals(p.kind) ? p.title : Recs.serviceName(p), p.link);
+            String label = APP_PICK.equals(p.kind) ? p.title : YT_VIDEO.equals(p.kind) ? "YouTube" : Recs.serviceName(p);
+            it = HomeApps.app(p.pkg, label, p.link);
             r = cardRects[cardIndex];
         } else {
             if (shelf.isEmpty()) return;
@@ -2780,7 +2797,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * shows the apps used last, on the plain background.
      */
     private void updateCards() {
-        List<Recs.Pick> list = tab == RECENT ? recentPicks() : recs.now(TAB_KIND[tab]);
+        List<Recs.Pick> list = tab == RECENT ? recentPicks() : tab == YOUTUBE ? youtubePicks() : recs.now(TAB_KIND[tab]);
         if (!samePicks(list, cards)) {
             cards = list;
             cardIndex = Math.min(cardIndex, Math.max(0, list.size() - 1));
@@ -2788,12 +2805,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 zone = Z_SHELF;
                 retarget(false);
             }
-        } else if (tab == RECENT) {
-            cards = list;   // the same apps, but "5 min ago" moves on
+        } else if (tab == RECENT || tab == YOUTUBE) {
+            cards = list;   // the same ones, but "5 min ago" moves on (and the sign-in card's text changes)
         }
         for (Recs.Pick p : recs.wanted()) recs.backdrop(p);   // all three tabs preloaded: switching tabs is instant
-        Backdrop b = cards.isEmpty() || tab == RECENT ? null : recs.backdrop(cards.get(0));
-        if (cards.isEmpty() || tab == RECENT || b != null) showBackdrop(b);
+        boolean own = tab == RECENT || tab == YOUTUBE;   // their cards aren't TMDB's: the plain background
+        Backdrop b = cards.isEmpty() || own ? null : recs.backdrop(cards.get(0));
+        if (cards.isEmpty() || own || b != null) showBackdrop(b);
         heroDirty = true;
         spoken.focusMoved();    // new picks under the focused card
     }
@@ -2803,6 +2821,70 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         recentApps.clear();
         for (Recent.App a : list) recentApps.put(a.pkg, a);
         if (tab == RECENT) updateCards();
+    }
+
+    @Override public void onYouTube() {
+        wake();
+        if (tab == YOUTUBE) updateCards();
+        heroDirty = true;
+    }
+
+    // The YouTube tab's cards: videos (by id), or one card to sign in, whose lines are made here (not while drawing).
+    private static final String YT_VIDEO = "yt", YT_LINK = "yt-link";
+    private final Map<String, YouTube.Video> ytVideos = new HashMap<>();
+    private String ytHeading = "", ytLine = "", ytCode = "", ytWait = "";
+
+    private List<Recs.Pick> youtubePicks() {
+        List<Recs.Pick> out = new ArrayList<>();
+        if (!youtube.linked()) {
+            ytHeading = Ui.tr("Connect your YouTube account");
+            String code = youtube.linkCode;
+            ytCode = code == null ? "" : code;
+            if (code != null) {
+                ytLine = Ui.trf("On your phone or computer, go to {url} and enter this code:", "url", youtube.linkUrl);
+                ytWait = Ui.tr("Waiting for you to confirm…");
+            } else if (youtube.linking) {
+                ytLine = Ui.tr("Asking Google for a code…");
+                ytWait = "";
+            } else {
+                String error = youtube.linkError;
+                ytLine = error != null ? error : Ui.tr("Press OK to get a code.");
+                ytWait = "";
+            }
+            Recs.Pick p = new Recs.Pick();
+            p.kind = YT_LINK;
+            p.id = (ytLine + ytCode).hashCode();
+            p.title = ytHeading;
+            p.meta = ytLine + (ytCode.isEmpty() ? "" : " " + ytCode);
+            out.add(p);
+            return out;
+        }
+        ytVideos.clear();
+        for (YouTube.Video v : youtube.now()) {
+            ytVideos.put(v.id, v);
+            Recs.Pick p = new Recs.Pick();
+            p.kind = YT_VIDEO;
+            p.id = v.id.hashCode();
+            p.title = v.title;
+            p.meta = v.channel + " · " + Recent.ago(v.published);
+            p.pkg = YouTube.PKG;
+            p.app = v.id;      // which video, for its image
+            p.link = "https://www.youtube.com/watch?v=" + v.id;
+            out.add(p);
+        }
+        return out;
+    }
+
+    /** The sign-in card: what to do, and the code to type, large. */
+    private void drawLinkCard(Canvas c, RectF r, float radius) {
+        fill.setShader(null);
+        fill.setColor(tone(0xFFFFFFFF, 0xFF2C2C2E));
+        c.drawRoundRect(r, radius, radius, fill);
+        float x = r.left + 56 * k;
+        c.drawText(ytHeading, x, r.top + 100 * k, lCardTitle);
+        c.drawText(ytLine, x, r.top + 170 * k, lCardMeta);
+        if (!ytCode.isEmpty()) c.drawText(ytCode, x, r.top + 290 * k, lHeadClock);
+        if (!ytWait.isEmpty()) c.drawText(ytWait, x, r.top + 360 * k, lCardMeta);
     }
 
     private List<Recs.Pick> recentPicks() {
@@ -3038,9 +3120,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         c.restore();
         Recent.App app = p != null && APP_PICK.equals(p.kind) ? recentApps.get(p.pkg) : null;
-        Backdrop b = p == null || app != null ? null : recs.backdrop(p);
-        Bitmap img = b == null ? null : (i == 0 ? b.wide : b.tall);
-        if (app != null) {
+        YouTube.Video video = p != null && YT_VIDEO.equals(p.kind) ? ytVideos.get(p.app) : null;
+        boolean own = app != null || video != null || (p != null && YT_LINK.equals(p.kind));
+        Backdrop b = p == null || own ? null : recs.backdrop(p);
+        Bitmap img = video != null ? (i == 0 ? video.wide : video.tall) : b == null ? null : (i == 0 ? b.wide : b.tall);
+        if (p != null && YT_LINK.equals(p.kind)) {
+            drawLinkCard(c, cell, r);
+            return;
+        } else if (app != null) {
             drawAppArt(c, app, cell, r);
         } else if (img != null) {
             roundImage(c, img, cell, r);
@@ -3080,7 +3167,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (p == null) return;
         fitPaint.set(lCardTitle);
         c.drawText(TextUtils.ellipsize(p.title, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + 46 * k, lCardTitle);
-        if ((i == 0 || app != null) && p.meta != null && !p.meta.isEmpty()) {
+        if ((i == 0 || app != null || video != null) && p.meta != null && !p.meta.isEmpty()) {
             fitPaint.set(lCardMeta);
             c.drawText(TextUtils.ellipsize(p.meta, fitPaint, bw, TextUtils.TruncateAt.END).toString(), base.left, base.bottom + 80 * k, lCardMeta);
         }

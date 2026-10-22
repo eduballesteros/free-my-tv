@@ -1649,18 +1649,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             drawerRects[i].set(x, top, x + tw, top + ROW_H * k);
             x += tw + gap;
         }
-        // iOS widgets: the clock and the weather small, the calendar (or the quotes) medium, from the left.
+        // iOS widgets across the row: the clock small on the left, the weather a little wider, and the calendar (or the
+        // quotes) taking the rest, flush with the right edge of the safe area.
         float cardsTop = CARDS_TOP * k, ch = Theme.WIDGET_H * k, small = Theme.WIDGET_S * k, g = 40 * k;
         float wl = left;
         clockCard.set(wl, cardsTop, wl + small, cardsTop + ch);
         wl += small + g;
         if (Prefs.weather()) {
-            weatherCard.set(wl, cardsTop, wl + small, cardsTop + ch);
-            wl += small + g;
+            weatherCard.set(wl, cardsTop, wl + Theme.WIDGET_WEATHER * k, cardsTop + ch);
+            wl += Theme.WIDGET_WEATHER * k + g;
         } else {
             weatherCard.setEmpty();
         }
-        quotesCard.set(wl, cardsTop, Math.min(right, wl + Theme.WIDGET_M * k), cardsTop + ch);
+        quotesCard.set(wl, cardsTop, right, cardsTop + ch);
         widgetShaders = null;
         drawerDirty = true;
     }

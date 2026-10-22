@@ -86,7 +86,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private static final long TOAST_MS = 6000, FADE_MS = 800;
     /** Blur radii of the shadow and shadowDeep paints (Shadows needs them to draw the same blur on older TVs). */
     private static final float SHADOW_BLUR = 26, DEEP_BLUR = 30;
-    private static final int SKY = 0, HERO = 1, STATUS = 2, PLATTER = 3, TILES = 4, DRAWER = 5, SHEET = 6, TOAST = 7;
+    private static final int SKY = 0, HERO = 1, STATUS = 2, PLATTER = 3, TILES = 4, DRAWER = 5, SHEET = 6, TOAST = 7, RUNNER = 8;
     private static final int Z_STATUS = 0, Z_HERO = 1, Z_SHELF = 2, Z_DRAWER = 3;
     private static final ExecutorService LOADER = Executors.newSingleThreadExecutor();
     // Light design (the L_ constants): title, tab bar, three recommendation cards and the shelf.
@@ -121,7 +121,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         @Override public boolean clickable(int id) { return (id - 1) / 1000 != WIDGETS; }
     });
     private final RectF a11yRect = new RectF();
-    private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer;
+    private final Layer sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, runnerLayer;
     private int zone = Z_SHELF;
 
     // Night look (like Apple's "Automatic" appearance): darker from sunset to sunrise, with a 2 s transition.
@@ -226,6 +226,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private boolean sheetOpen;
     private int gridIndex;
 
+    // Pikachu running across when the screen is left alone (idle_pikachu=true), on a layer of its own
+    private final Runner runner = Config.IDLE_PIKACHU ? new Runner() : null;
+    private long lastKeyAt = SystemClock.uptimeMillis();
+    private boolean runnerWasActive;
+    private final float[] runnerGrounds = new float[2];
+
     // Toasts
     private final ArrayDeque<String> toasts = new ArrayDeque<>();
     private StaticLayout toast;
@@ -324,6 +330,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
                 case TILES: drawTiles(c); break;
                 case DRAWER: drawDrawer(c); break;
                 case SHEET: drawSheet(c); break;
+                case RUNNER: if (runner != null) runner.draw(c, SystemClock.uptimeMillis(), w, k); break;
                 default: drawToast(c); break;
             }
             scene.setOffset(0, 0);
@@ -375,12 +382,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         drawerLayer = new Layer(a, DRAWER);
         sheetLayer = new Layer(a, SHEET);
         toastLayer = new Layer(a, TOAST);
+        runnerLayer = new Layer(a, RUNNER);
         // Hardware layers on the GPU: only the one that changed is redrawn; moving, fading and scaling stay cheap.
         // Not on Android 8 to 11: on older GPUs (a Mi Box 3's Mali-450) redrawing and compositing a big layer on every
         // frame cost more than drawing straight to the screen (measured: focus on the picks 33 → 12 ms a frame, the
         // drawer 19 → 17 ms).
         for (View v : new View[] {heroLayer, status, platter, tiles, drawerLayer, sheetLayer}) v.setLayerType(Ui.LEGACY ? LAYER_TYPE_NONE : LAYER_TYPE_HARDWARE, null);
-        for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer}) {
+        for (View v : new View[] {sky, heroLayer, status, platter, tiles, drawerLayer, sheetLayer, toastLayer, runnerLayer}) {
             v.setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);   // TalkBack reads the items (Spoken)
             addView(v);
         }
@@ -413,6 +421,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         running = true;
         checkNight(false);
         resumedAt = SystemClock.uptimeMillis();
+        lastKeyAt = resumedAt;   // back from an app: the idle time starts again
         lastNanos = 0;
         lastStep = 0;
         data.addListener(this);
@@ -527,6 +536,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         measure(drawerLayer, width, Math.round(600 * kk));
         measure(sheetLayer, width, height);
         measure(toastLayer, Math.round(1000 * kk), Math.round(220 * kk));
+        measure(runnerLayer, width, height);
         setMeasuredDimension(width, height);
     }
 
@@ -547,6 +557,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         sheetLayer.setPivotX(width / 2f);
         sheetLayer.setPivotY(height / 2f);
         place(toastLayer, (width - toastLayer.getMeasuredWidth()) / 2, 0);
+        place(runnerLayer, 0, 0);
     }
 
     private static void place(View v, int x, int y) {
@@ -665,6 +676,15 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         boolean heroFading = tickHeroFade(up);
         boolean bgFading = tickBackgroundFade(up);
         boolean nightMoving = tickNight(up);
+        boolean runnerActive = runner != null && runner.active(up);
+        if (runner != null && !runnerActive && !drawerOpen && !sheetOpen && !reordering) {
+            // Where it can run: the top of the shelf, or of the cards.
+            runnerGrounds[0] = platterRect.top + 6 * k;
+            runnerGrounds[1] = cards.isEmpty() ? runnerGrounds[0] : cardRects[0].top + 4 * k;
+            runnerActive = runner.maybeStart(up, lastKeyAt, runnerGrounds, w, k);
+        }
+        if (runnerActive || runnerWasActive) runnerLayer.invalidate();   // and once more after, to clear it
+        runnerWasActive = runnerActive;
 
         if (drawerMoving || sheetMoving || motionDirty) updateMotion();
         // Opening and closing the drawer only moves the cached layers: redrawing the glass on every frame made the TV
@@ -693,7 +713,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         // Busy: something is moving, or the sheet or the drawer is open.
         boolean busy = tilesMoving || statusMoving || heroMoving || drawerItemsMoving || gridMoving || drawerMoving
                 || sheetMoving || toastFading || heroFading || bgFading || nightMoving || sheetOpen || sheet.value > 0.001f
-                || drawerOpen || drawer.value > 0.001f || toast != null || !toasts.isEmpty();
+                || drawerOpen || drawer.value > 0.001f || toast != null || !toasts.isEmpty() || runnerActive;
         idle = !busy;
         if (busy) Choreographer.getInstance().postFrameCallback(this);
         else Choreographer.getInstance().postFrameCallbackDelayed(this, 1000);
@@ -2056,6 +2076,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     boolean onKey(KeyEvent e) {
         wake();
+        lastKeyAt = SystemClock.uptimeMillis();
+        if (runner != null && runner.stop(lastKeyAt)) runnerLayer.invalidate();
         boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
         if (reordering) return reorderKey(e, down);
         int code = e.getKeyCode();

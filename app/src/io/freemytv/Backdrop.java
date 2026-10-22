@@ -62,6 +62,11 @@ final class Backdrop {
         nightImage = night == null ? null : Bitmap.createBitmap(night, FW, FH, Bitmap.Config.ARGB_8888);
     }
 
+    /** A wallpaper (Wallpaper): its light and dark versions as they are, at the frosted and the glass sizes. */
+    static Backdrop wallpaper(int[] light, int[] lightGlass, int[] dark, int[] darkGlass) {
+        return new Backdrop(null, light.clone(), null, null, null, light, lightGlass, dark, darkGlass);
+    }
+
     static Backdrop make(Bitmap src, boolean forLight) {
         Bitmap out = Bitmap.createBitmap(W, H, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(out);

@@ -2866,9 +2866,31 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (Recs.Pick p : recs.wanted()) recs.backdrop(p);   // all three tabs preloaded: switching tabs is instant
         boolean own = tab == RECENT || youtubeTab(tab);   // not TMDB's: the plain background
         Backdrop b = cards.isEmpty() || own ? null : recs.backdrop(cards.get(0));
-        if (cards.isEmpty() || own || b != null) showBackdrop(b);
+        ensureWallpaper();
+        if (cards.isEmpty() || own || b != null) showBackdrop(b != null ? b : wallpaper);
         heroDirty = true;
         spoken.focusMoved();    // new picks under the focused card
+    }
+
+    // The wallpaper for the time of day (Wallpaper): the background wherever no photo is shown. Made in the background,
+    // once per moment (dawn, day, dusk, night).
+    private Backdrop wallpaper;
+    private int wallpaperMoment = -1;
+
+    private void ensureWallpaper() {
+        HomeData.Weather wx = data.weather;
+        final int moment = Wallpaper.moment(System.currentTimeMillis(), wx.sunrise, wx.sunset);
+        if (moment == wallpaperMoment) return;
+        wallpaperMoment = moment;
+        LOADER.execute(() -> {
+            Backdrop b = Wallpaper.backdrop(moment);
+            handler.post(() -> {
+                if (moment != wallpaperMoment) return;
+                boolean showing = bgTo == wallpaper || bgTo == null;
+                wallpaper = b;
+                if (showing) updateCards();
+            });
+        });
     }
 
     private void setRecent(List<Recent.App> list) {

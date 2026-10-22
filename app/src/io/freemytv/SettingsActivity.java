@@ -7,11 +7,14 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
 import android.graphics.BlurMaskFilter;
 import android.graphics.Canvas;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.graphics.Shader;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -116,7 +119,7 @@ public class SettingsActivity extends Activity {
         private static final int MAIN = 0, HOME_CHOICE = 1, HOME_SETTINGS = 2, REMOTE_KEYS = 3, PICKER = 4, SHELF_EDIT = 5;
         private static final float LIST_ROW_H = 68, LIST_ROW_GAP = 6;
         private static final int PICK_VISIBLE = 9;
-        private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_H = 74, ROW_GAP = 8, CHOICE_H = 104;
+        private static final float LIST_X = 1000, LIST_R = 1824, LIST_TOP = 186, ROW_H = 64, ROW_GAP = 4, CHOICE_H = 104;
         private static final int AMBER = 0xFFFFC266, INK = 0xFF1C1C1E;
 
         private final SettingsActivity activity;
@@ -289,23 +292,27 @@ public class SettingsActivity extends Activity {
             h = height;
             k = w / 1920f;
             scene.setSize(w, h);
-            title = Ui.text(Ui.displaySemibold, 50 * k, 0xFFFFFFFF);
+            screenRect.set(0, 0, w, h);
+            panelSheen = null;
+            if (wallpaper == null) loadWallpaper();
+            title = Ui.text(Ui.displaySemibold, Theme.TITLE * k, 0xFFFFFFFF);
+            title.setLetterSpacing(Theme.TITLE_TRACK);
             title.setTextAlign(Paint.Align.CENTER);
-            subtitle = Ui.text(Ui.regular, 26 * k, 0x99FFFFFF);
+            subtitle = Ui.text(Ui.regular, Theme.BODY * k, 0xC7FFFFFF);
             subtitle.setTextAlign(Paint.Align.CENTER);
-            version = Ui.text(Ui.regular, 22 * k, 0x66FFFFFF);
+            version = Ui.text(Ui.regular, 28 * k, 0x99FFFFFF);
             version.setTextAlign(Paint.Align.CENTER);
-            rowLabel = Ui.text(Ui.medium, 30 * k, 0xF2FFFFFF);
-            rowValue = Ui.text(Ui.regular, 28 * k, 0x8CFFFFFF);
+            rowLabel = Ui.text(Ui.medium, Theme.BODY * k, 0xF2FFFFFF);
+            rowValue = Ui.text(Ui.regular, Theme.BODY * k, 0x8CFFFFFF);
             rowValue.setTextAlign(Paint.Align.RIGHT);
-            rowSub = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
-            header = Ui.text(Ui.semibold, 21 * k, 0x73FFFFFF);
+            rowSub = Ui.text(Ui.regular, 28 * k, 0x8CFFFFFF);
+            header = Ui.text(Ui.semibold, 28 * k, 0x99FFFFFF);
             header.setLetterSpacing(0.06f);
-            cellLabel = Ui.text(Ui.regular, 25 * k, 0xD9FFFFFF);
-            cellValue = Ui.numbers(Ui.regular, 25 * k, 0xD9FFFFFF);
+            cellLabel = Ui.text(Ui.regular, 28 * k, 0xD9FFFFFF);
+            cellValue = Ui.numbers(Ui.regular, 28 * k, 0xD9FFFFFF);
             cellValue.setTextAlign(Paint.Align.RIGHT);
-            warn = Ui.text(Ui.regular, 23 * k, AMBER);
-            notice = new TextPaint(Ui.text(Ui.regular, 23 * k, 0xB3FFFFFF));
+            warn = Ui.text(Ui.regular, 28 * k, AMBER);
+            notice = new TextPaint(Ui.text(Ui.regular, 28 * k, 0xC7FFFFFF));
             spinner = new Paint(Paint.ANTI_ALIAS_FLAG);
             spinner.setStyle(Paint.Style.STROKE);
             spinner.setStrokeCap(Paint.Cap.ROUND);
@@ -356,7 +363,12 @@ public class SettingsActivity extends Activity {
                 lastSky = up;
                 scene.advance(seconds);
             }
-            scene.drawBackground(c);
+            if (wallpaper != null) {
+                c.drawBitmap(wallpaper, null, screenRect, wallPaint);
+            } else {
+                scene.drawBackground(c);
+            }
+            drawPanel(c);
 
             // On the left: big symbol, title, description.
             float cx = 500 * k;
@@ -366,6 +378,45 @@ public class SettingsActivity extends Activity {
             c.drawText(versionName(getContext()), cx, 704 * k, version);
 
             if (screen == MAIN) drawMain(c, seconds); else if (screen == HOME_CHOICE) drawChoice(c); else if (screen == PICKER) drawPicker(c); else if (screen == SHELF_EDIT) drawShelfEditor(c); else drawList(c);
+        }
+
+        // Glass: the wallpaper of the time of day in its dark version, and the column of settings on regular glass.
+        private Bitmap wallpaper;
+        private final RectF screenRect = new RectF(), panelRect = new RectF();
+        private final Paint wallPaint = new Paint(Paint.FILTER_BITMAP_FLAG | Paint.DITHER_FLAG);
+        private final Paint panelPaint = new Paint(Paint.ANTI_ALIAS_FLAG), edgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private LinearGradient panelSheen;
+
+        private void loadWallpaper() {
+            final HomeData.Weather wx = HomeData.get(getContext()).weather;
+            final int moment = Wallpaper.moment(System.currentTimeMillis(), wx.sunrise, wx.sunset);
+            new Thread(() -> {
+                Backdrop b = Wallpaper.backdrop(moment);
+                post(() -> {
+                    wallpaper = b.nightImage;
+                    invalidate();
+                });
+            }).start();
+        }
+
+        private void drawPanel(Canvas c) {
+            float radius = Theme.WIDGET_RADIUS * k;
+            panelRect.set((LIST_X - 40) * k, (LIST_TOP - 96) * k, (LIST_R + 24) * k, (1080 - Theme.SAFE_Y) * k);
+            panelPaint.setShader(null);
+            panelPaint.setColor(Theme.REGULAR_DARK);
+            c.drawRoundRect(panelRect, radius, radius, panelPaint);
+            if (panelSheen == null) {
+                panelSheen = new LinearGradient(0, panelRect.top, 0, panelRect.top + 220 * k, Theme.SPECULAR_TOP, 0x00FFFFFF, Shader.TileMode.CLAMP);
+            }
+            panelPaint.setShader(panelSheen);
+            c.drawRoundRect(panelRect, radius, radius, panelPaint);
+            panelPaint.setShader(null);
+            edgePaint.setStyle(Paint.Style.STROKE);
+            edgePaint.setStrokeWidth(Math.max(1, k));
+            edgePaint.setColor(Theme.EDGE_DARK);
+            c.drawRoundRect(panelRect, radius, radius, edgePaint);
+            edgePaint.setColor(Theme.SPECULAR_LINE);
+            c.drawLine(panelRect.left + radius, panelRect.top + 1.5f * k, panelRect.right - radius, panelRect.top + 1.5f * k, edgePaint);
         }
 
         private void drawMain(Canvas c, float seconds) {
@@ -380,30 +431,30 @@ public class SettingsActivity extends Activity {
                 float y = (LIST_TOP + i * (ROW_H + ROW_GAP)) * k;
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + ROW_H * k);
                 float f = drawRowBackground(c, i);
-                int ink = blend(0xF2FFFFFF, INK, f);
+                int ink = blend(dimmed(0xF2FFFFFF, f), INK, f);
                 rowLabel.setColor(ink);
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel);
                 c.drawText(labels[i], rowRect.left + 30 * k, base, rowLabel);
                 float right = rowRect.right - 30 * k;
                 if (i >= 2) {
                     float cw = Symbols.width(getContext(), "chevron_right", 22 * k);
-                    Symbols.draw(getContext(), c, "chevron_right", right - cw / 2, rowRect.centerY(), 22 * k, blend(0x66FFFFFF, 0x991C1C1E, f));
+                    Symbols.draw(getContext(), c, "chevron_right", right - cw / 2, rowRect.centerY(), 22 * k, blend(dimmed(0x66FFFFFF, f), 0x991C1C1E, f));
                 } else if (i == 0 && working) {
                     // Switching: the current step in place of the value, with the spinning arc.
                     String text = busyText.isEmpty() ? Ui.tr("Starting…") : busyText;
-                    rowValue.setColor(blend(0xB3FFFFFF, 0xB31C1C1E, f));
+                    rowValue.setColor(blend(dimmed(0xB3FFFFFF, f), 0xB31C1C1E, f));
                     String shown = TextUtils.ellipsize(text, new TextPaint(rowValue), 470 * k, TextUtils.TruncateAt.END).toString();
                     c.drawText(shown, right, base, rowValue);
                     float sx = right - rowValue.measureText(shown) - 26 * k;
-                    spinner.setColor(blend(0xFFFFFFFF, INK, f));
+                    spinner.setColor(blend(dimmed(0xFFFFFFFF, f), INK, f));
                     Ui.spinner(c, sx, rowRect.centerY(), 12 * k, seconds * 1.3f, spinner);
                 } else {
-                    rowValue.setColor(blend(0x8CFFFFFF, 0x8C1C1C1E, f));
+                    rowValue.setColor(blend(dimmed(0x8CFFFFFF, f), 0x8C1C1C1E, f));
                     c.drawText(values[i], right, base, rowValue);
                 }
             }
 
-            float y = (LIST_TOP + 6 * (ROW_H + ROW_GAP) + 20) * k;
+            float y = (LIST_TOP + 6 * (ROW_H + ROW_GAP) + 36) * k;
             String error = state.optString("error");
             if (working && busyText.equals(Ui.tr("Accept “Allow USB debugging?” on the TV (tick “Always allow”)."))) {
                 c.drawText(Ui.tr("On the TV: tick “Always allow” and press OK."),
@@ -441,7 +492,8 @@ public class SettingsActivity extends Activity {
             else line = Ui.tr("Fetching titles…");
             c.drawText(TextUtils.ellipsize(line, notice, 790 * k, TextUtils.TruncateAt.END).toString(), x, y + 42 * k, notice);
             version.setTextAlign(Paint.Align.LEFT);
-            c.drawText(Ui.tr("This product uses the TMDB API but is not endorsed or certified by TMDB."), x, y + 78 * k, version);
+            c.drawText(TextUtils.ellipsize(Ui.tr("This product uses the TMDB API but is not endorsed or certified by TMDB."), notice, 790 * k,
+                    TextUtils.TruncateAt.END).toString(), x, y + 78 * k, version);
             if (!Config.WATCHMODE_KEY.trim().isEmpty()) {
                 c.drawText(Ui.tr("Links to the titles by Watchmode."), x, y + 108 * k, version);
             }
@@ -453,7 +505,7 @@ public class SettingsActivity extends Activity {
         private float drawRowBackground(Canvas c, int i) {
             float f = Ui.clamp(pop[i].value);
             if (f > 0.01f) {
-                float s = 1 + 0.02f * f;
+                float s = 1 + (Theme.FOCUS_SCALE - 1) * 0.5f * f;
                 float cx = rowRect.centerX(), cy = rowRect.centerY();
                 tmp.set(cx - rowRect.width() * s / 2, cy - rowRect.height() * s / 2, cx + rowRect.width() * s / 2, cy + rowRect.height() * s / 2);
                 float r = 18 * k * s;
@@ -494,7 +546,7 @@ public class SettingsActivity extends Activity {
             c.drawText(Ui.tr("NOTICES"), x, y, header);
             JSONArray notices = state.optJSONArray("notices");
             int shown = 0;
-            for (int i = 0; notices != null && i < notices.length() && shown < 2; i++) {
+            for (int i = 0; notices != null && i < notices.length() && shown < 1; i++) {
                 JSONObject o = notices.optJSONObject(i);
                 if (o == null) continue;
                 String line = ago(o.optLong("at")) + " · " + o.optString("text");
@@ -506,7 +558,7 @@ public class SettingsActivity extends Activity {
 
         /** Home screen choice: Free My TV or the original, with a check on the one in use. */
         private void drawChoice(Canvas c) {
-            Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
+            Paint heading = Ui.text(Ui.displaySemibold, Theme.HEADLINE * k, 0xFFFFFFFF);
             c.drawText(Ui.tr("Home Screen"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             String[][] options = {{"Free My TV", Ui.tr("No ads, with the new screensaver")},
                     {Ui.tr("Original"), Ui.tr("The TV's factory home screen")}};
@@ -515,18 +567,23 @@ public class SettingsActivity extends Activity {
                 float y = (LIST_TOP + 20 + i * (CHOICE_H + ROW_GAP)) * k;
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + CHOICE_H * k);
                 float f = drawRowBackground(c, i);
-                rowLabel.setColor(blend(0xF2FFFFFF, INK, f));
-                rowSub.setColor(blend(0x8CFFFFFF, 0x991C1C1E, f));
+                rowLabel.setColor(blend(dimmed(0xF2FFFFFF, f), INK, f));
+                rowSub.setColor(blend(dimmed(0x8CFFFFFF, f), 0x991C1C1E, f));
                 c.drawText(options[i][0], rowRect.left + 30 * k, rowRect.top + 44 * k, rowLabel);
                 c.drawText(options[i][1], rowRect.left + 30 * k, rowRect.top + 80 * k, rowSub);
                 if (i == current) {
                     float cw = Symbols.width(getContext(), "check", 26 * k);
-                    Symbols.draw(getContext(), c, "check", rowRect.right - 30 * k - cw / 2, rowRect.centerY(), 26 * k, blend(0xFFFFFFFF, INK, f));
+                    Symbols.draw(getContext(), c, "check", rowRect.right - 30 * k - cw / 2, rowRect.centerY(), 26 * k, blend(dimmed(0xFFFFFFFF, f), INK, f));
                 }
             }
-            Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
+            Paint hint = Ui.text(Ui.regular, 28 * k, 0xB3FFFFFF);
             c.drawText(Ui.tr("Switching takes a few seconds; the screen blinks while it measures."), LIST_X * k + 30 * k,
                     (LIST_TOP + 20 + 2 * (CHOICE_H + ROW_GAP) + 40) * k, hint);
+        }
+
+        /** A row's colour while another one has the focus: at 80% (Glass). */
+        private static int dimmed(int color, float f) {
+            return Ui.alpha(color, Theme.FOCUS_DIM + (1 - Theme.FOCUS_DIM) * Math.max(0, Math.min(1, f)));
         }
 
         private static int blend(int a, int b, float f) {
@@ -867,7 +924,7 @@ public class SettingsActivity extends Activity {
         }
 
         private void drawShelfEditor(Canvas c) {
-            Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
+            Paint heading = Ui.text(Ui.displaySemibold, Theme.HEADLINE * k, 0xFFFFFFFF);
             c.drawText(Ui.tr("Shelf"), LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             int rows = rowCount();
             for (int i = 0; i < rows; i++) {
@@ -877,12 +934,12 @@ public class SettingsActivity extends Activity {
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
                 float f = drawRowBackground(c, i);
                 rowLabel.setColor(blend(place >= 0 ? 0xF2FFFFFF : 0x80FFFFFF, place >= 0 ? INK : 0x801C1C1E, f));
-                rowValue.setColor(blend(0xB3FFFFFF, 0xB31C1C1E, f));
+                rowValue.setColor(blend(dimmed(0xB3FFFFFF, f), 0xB31C1C1E, f));
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel);
                 c.drawText(TextUtils.ellipsize(app[1], new TextPaint(rowLabel), 520 * k, TextUtils.TruncateAt.END).toString(), rowRect.left + 30 * k, base, rowLabel);
                 c.drawText(place >= 0 ? "#" + (place + 1) : Ui.tr("shelf|Off"), rowRect.right - 30 * k, base, rowValue);
             }
-            Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
+            Paint hint = Ui.text(Ui.regular, 28 * k, 0xB3FFFFFF);
             float hy = (LIST_TOP + 20 + rows * (LIST_ROW_H + LIST_ROW_GAP) + 36) * k;
             c.drawText(Ui.trf("OK adds or removes (up to {n}). ← → change the order.", "n", HomeApps.MAX_SHELF), LIST_X * k + 30 * k, hy, hint);
         }
@@ -912,7 +969,7 @@ public class SettingsActivity extends Activity {
 
         /** A long list (the apps): nine rows at a time, the one in use checked. */
         private void drawPicker(Canvas c) {
-            Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
+            Paint heading = Ui.text(Ui.displaySemibold, Theme.HEADLINE * k, 0xFFFFFFFF);
             String title = pickFor == PICK_CITY ? Ui.tr("City")
                     : pickFor == PICK_LANGUAGE ? Ui.tr("Language") : keyLabels()[pickFor - 1];
             c.drawText(title, LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
@@ -922,14 +979,14 @@ public class SettingsActivity extends Activity {
                 float y = (LIST_TOP + 20 + i * (LIST_ROW_H + LIST_ROW_GAP)) * k;
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
                 float f = drawRowBackground(c, i);
-                rowLabel.setColor(blend(0xF2FFFFFF, INK, f));
+                rowLabel.setColor(blend(dimmed(0xF2FFFFFF, f), INK, f));
                 c.drawText(pickLabels.get(at), rowRect.left + 30 * k, rowRect.centerY() + Ui.halfCap(rowLabel), rowLabel);
                 if (at == pickCurrent) {
                     float cw = Symbols.width(getContext(), "check", 26 * k);
-                    Symbols.draw(getContext(), c, "check", rowRect.right - 30 * k - cw / 2, rowRect.centerY(), 26 * k, blend(0xFFFFFFFF, INK, f));
+                    Symbols.draw(getContext(), c, "check", rowRect.right - 30 * k - cw / 2, rowRect.centerY(), 26 * k, blend(dimmed(0xFFFFFFFF, f), INK, f));
                 }
             }
-            Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
+            Paint hint = Ui.text(Ui.regular, 28 * k, 0xB3FFFFFF);
             float hy = (LIST_TOP + 20 + rows * (LIST_ROW_H + LIST_ROW_GAP) + 36) * k;
             c.drawText((pickScroll + focus + 1) + " / " + pickLabels.size() + "  ·  " + Ui.tr("OK picks, Back cancels."),
                     LIST_X * k + 30 * k, hy, hint);
@@ -939,22 +996,22 @@ public class SettingsActivity extends Activity {
             boolean keys = screen == REMOTE_KEYS;
             String[] labels = keys ? keyLabels() : settingLabels();
             String[] values = keys ? keyValues() : settingValues();
-            Paint heading = Ui.text(Ui.displaySemibold, 34 * k, 0xFFFFFFFF);
+            Paint heading = Ui.text(Ui.displaySemibold, Theme.HEADLINE * k, 0xFFFFFFFF);
             c.drawText(keys ? Ui.tr("Remote Buttons") : Ui.tr("Home Settings"),
                     LIST_X * k + 30 * k, (LIST_TOP - 24) * k, heading);
             for (int i = 0; i < labels.length; i++) {
                 float y = (LIST_TOP + 20 + i * (LIST_ROW_H + LIST_ROW_GAP)) * k;
                 rowRect.set(LIST_X * k, y, LIST_R * k, y + LIST_ROW_H * k);
                 float f = drawRowBackground(c, i);
-                rowLabel.setColor(blend(0xF2FFFFFF, INK, f));
+                rowLabel.setColor(blend(dimmed(0xF2FFFFFF, f), INK, f));
                 boolean locked = !keys && i >= COIN_ROWS && !Prefs.quotes();
                 rowValue.setColor(blend(locked ? 0x59FFFFFF : 0xB3FFFFFF, locked ? 0x591C1C1E : 0xB31C1C1E, f));
-                if (locked) rowLabel.setColor(blend(0x73FFFFFF, 0x731C1C1E, f));
+                if (locked) rowLabel.setColor(blend(dimmed(0x73FFFFFF, f), 0x731C1C1E, f));
                 float base = rowRect.centerY() + Ui.halfCap(rowLabel);
                 c.drawText(labels[i], rowRect.left + 30 * k, base, rowLabel);
                 c.drawText(values[i], rowRect.right - 30 * k, base, rowValue);
             }
-            Paint hint = Ui.text(Ui.regular, 23 * k, 0x8CFFFFFF);
+            Paint hint = Ui.text(Ui.regular, 28 * k, 0xB3FFFFFF);
             float hy = (LIST_TOP + 20 + labels.length * (LIST_ROW_H + LIST_ROW_GAP) + 36) * k;
             c.drawText(Ui.tr("OK or the arrows change the value."), LIST_X * k + 30 * k, hy, hint);
             if (keys) {

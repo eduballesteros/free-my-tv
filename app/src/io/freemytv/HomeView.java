@@ -167,6 +167,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         TILE_STYLE.put("max", new int[] {0xFF5C30E8, 0xFF221684, 0});
         TILE_STYLE.put("appletv", new int[] {0xFF1C1C1E, 0xFF000000, 0});
     }
+    /** At night, a light tile with no brand colors (Spotify) is this dark one. */
+    private static final int[] DARK_TILE = {0xFF1C1C1E, 0xFF161618, 0};
+    private LinearGradient tileWhite;
     private final android.graphics.PorterDuffColorFilter whiteLogo =
             new android.graphics.PorterDuffColorFilter(0xFFFFFFFF, android.graphics.PorterDuff.Mode.SRC_IN);
     private final RectF platterRect = new RectF();
@@ -1298,11 +1301,16 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         c.restore();
         int[] style = TILE_STYLE.get(it.key);
+        // Dark tiles (Netflix, YouTube, Spotify, Apple TV) turn white by day, on the white shelf, and dark again at night.
+        boolean lightTile = it.logo != null && HomeApps.LIGHT_TILES.contains(it.key);
+        if (lightTile && style == null) style = DARK_TILE;
         if (it.logo != null && style != null) {
+            float day = lightTile ? 1 - night : 0;
             if (tileShaders.length != shelf.size() || tileShaderH != bh) {
                 tileShaders = new LinearGradient[shelf.size()];
                 tileShaderH = bh;
                 tileGlow = new LinearGradient(0, -bh / 2, 0, 0, 0x14FFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP);
+                tileWhite = new LinearGradient(0, -bh / 2, 0, bh / 2, 0xFFFFFFFF, 0xFFEDEDF2, Shader.TileMode.CLAMP);
             }
             if (tileShaders[i] == null) {
                 tileShaders[i] = new LinearGradient(0, -bh / 2, 0, bh / 2, style[0], style[1], Shader.TileMode.CLAMP);
@@ -1311,9 +1319,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             c.translate(cx, cy);
             c.scale(s, s);
             tmp.set(-bw / 2, -bh / 2, bw / 2, bh / 2);
-            tileFill.setShader(tileShaders[i]);
-            tileFill.setAlpha(255);
-            c.drawRoundRect(tmp, r0, r0, tileFill);
+            if (day < 0.999f) {
+                tileFill.setShader(tileShaders[i]);
+                tileFill.setAlpha(255);
+                c.drawRoundRect(tmp, r0, r0, tileFill);
+            }
+            if (day > 0.001f) {
+                tileFill.setShader(tileWhite);
+                tileFill.setAlpha(Math.round(255 * day));
+                c.drawRoundRect(tmp, r0, r0, tileFill);
+                tileFill.setAlpha(255);
+            }
             if (fc > 0.01f) {
                 tileFill.setShader(tileGlow);
                 tileFill.setAlpha(Math.round(255 * fc));
@@ -1322,7 +1338,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             }
             tileFill.setShader(null);
             c.restore();
-            drawLogo(c, it, cell, s, style[2]);
+            if (day < 0.999f) drawLogo(c, it, cell, s, style[2], 1 - day);
+            if (day > 0.001f) drawLogo(c, it, cell, s, 2, day);   // 2: the logo's version for a light background
         } else if (it.logo != null) {
             tileFill.setShader(null);
             tileFill.setColor(0xFF161618);
@@ -1367,6 +1384,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
      * rest it is drawn pixel for pixel, without resampling (on a 720p UI, shrinking at draw time made it look jagged).
      */
     private void drawLogo(Canvas c, HomeApps.Item it, RectF box, float s, int mode) {
+        drawLogo(c, it, box, s, mode, 1);
+    }
+
+    private void drawLogo(Canvas c, HomeApps.Item it, RectF box, float s, int mode, float alpha) {
         boolean rest = s < 1 + FOCUS_GROW / 2;
         Bitmap logo = crispLogo(it, mode == 2 && it.logoDark != null, rest);
         if (logo == null) return;
@@ -1379,7 +1400,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         tmp.set(left, top, left + dw, top + dh);
         bitmapPaint.setColorFilter(mode == 1 ? whiteLogo : null);
+        bitmapPaint.setAlpha(Math.round(255 * alpha));
         c.drawBitmap(logo, null, tmp, bitmapPaint);
+        bitmapPaint.setAlpha(255);
         bitmapPaint.setColorFilter(null);
     }
 

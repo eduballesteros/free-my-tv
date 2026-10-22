@@ -147,6 +147,7 @@ final class HomeApps {
                 if (it.logo == null) it.tile = appTile(c, d[0], d[2], 0xFF000000 | Integer.parseInt(d[3], 16));
                 if (it.logo != null) it.logoInk = ink(it.logo);
                 it.logoDark = ownLogoCached(c, d[0] + "-dark");
+                if (it.logoDark == null && it.logo != null && LIGHT_TILES.contains(d[0])) it.logoDark = inkOnLightCached(d[0], it.logo);
                 it.logoScale = Float.parseFloat(d[5]);
             }
             items.add(it);
@@ -926,6 +927,66 @@ final class HomeApps {
         } catch (IOException e) {
             return null;
         }
+    }
+
+    /** Apps whose icon is a dark tile: by day it turns white (on the white shelf), with the logo's white parts in ink. */
+    static final Set<String> LIGHT_TILES = new HashSet<>(java.util.Arrays.asList("netflix", "youtube", "spotify", "appletv"));
+
+    private static Bitmap inkOnLightCached(String key, Bitmap logo) {
+        String cacheKey = "ink:" + key + "@" + System.identityHashCode(logo);
+        synchronized (LOGOS) {
+            if (LOGOS.containsKey(cacheKey)) return LOGOS.get(cacheKey);
+        }
+        Bitmap b = inkOnLight(logo);
+        synchronized (LOGOS) {
+            LOGOS.put(cacheKey, b);
+        }
+        return b;
+    }
+
+    /**
+     * The logo for a white tile: its white parts that touch the outside (the letters of "YouTube", "Spotify") turn
+     * near-black; a white part enclosed by color (YouTube's play triangle, inside the red button) stays white.
+     */
+    private static Bitmap inkOnLight(Bitmap logo) {
+        int w = logo.getWidth(), h = logo.getHeight(), n = w * h;
+        int[] px = new int[n];
+        logo.getPixels(px, 0, w, 0, 0, w, h);
+        boolean[] ink = new boolean[n];
+        int[] queue = new int[n];
+        int head = 0, tail = 0;
+        // From the transparent pixels (and the light ones on the border) into the light ones next to them.
+        for (int i = 0; i < n; i++) {
+            int x = i % w, y = i / w;
+            boolean border = x == 0 || y == 0 || x == w - 1 || y == h - 1;
+            if ((px[i] >>> 24) <= 10) queue[tail++] = i;
+            else if (border && light(px[i])) {
+                ink[i] = true;
+                queue[tail++] = i;
+            }
+        }
+        while (head < tail) {
+            int i = queue[head++], x = i % w, y = i / w;
+            for (int d = 0; d < 4; d++) {
+                int nx = x + (d == 0 ? 1 : d == 1 ? -1 : 0), ny = y + (d == 2 ? 1 : d == 3 ? -1 : 0);
+                if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+                int j = ny * w + nx;
+                if (ink[j] || (px[j] >>> 24) <= 10 || !light(px[j])) continue;
+                ink[j] = true;
+                queue[tail++] = j;
+            }
+        }
+        for (int i = 0; i < n; i++) if (ink[i]) px[i] = (px[i] & 0xFF000000) | 0x1D1D1F;
+        Bitmap out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        out.setPixels(px, 0, w, 0, 0, w, h);
+        return out;
+    }
+
+    /** White or light gray (antialiased edges included): bright and with almost no color. */
+    private static boolean light(int p) {
+        int r = (p >> 16) & 255, g = (p >> 8) & 255, b = p & 255;
+        int max = Math.max(r, Math.max(g, b)), min = Math.min(r, Math.min(g, b));
+        return min > 140 && max - min < 48;
     }
 
     private static Bitmap trim(Bitmap b) {

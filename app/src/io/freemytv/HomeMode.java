@@ -182,6 +182,9 @@ final class HomeMode {
         }
     }
 
+    /** Lets the home screen read which apps were used last (the Recent tab); Original puts it back. */
+    private static final String USAGE = "appops set " + PKG + " GET_USAGE_STATS ";
+
     private static final String REMOTE_SERVICE = PKG + "/" + PKG + ".RemoteKeyService";
     private static final Pattern SERVICE = Pattern.compile("[\\w.]+/[\\w.$]+");
 
@@ -260,6 +263,7 @@ final class HomeMode {
             check(adb.shell("cmd package set-home-activity " + HOME_ACTIVITY), "Success",
                     Ui.tr("Android didn't accept the new home screen"));
             adb.shell("settings put secure screensaver_components " + DREAM);
+            adb.shell(USAGE + "allow");
             JSONObject started = state(c);
             started.put("mode", FREE).put("homeReverted", false).put("setupHome", setupHome);
             save(c, started);
@@ -340,6 +344,7 @@ final class HomeMode {
             busy(c, Ui.tr("Restoring the original home screen…"));
             boolean homeOk = restoreHome(adb, home);
             restoreScreensaver(adb, s);
+            adb.shell(USAGE + "default");
             try {
                 remoteService(c, adb, false);
             } catch (IOException e) {
@@ -501,6 +506,7 @@ final class HomeMode {
                     fixed.add(Ui.tr("the screensaver"));
                 }
                 record(adb, disabled);
+                if (!Recent.allowed(app)) adb.shell(USAGE + "allow");   // an update from before the Recent tab
                 JSONObject latest = state(app);
                 latest.put("disabled", new JSONArray(sorted(disabled)));
                 save(app, latest);

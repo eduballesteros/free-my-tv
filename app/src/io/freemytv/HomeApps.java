@@ -480,6 +480,15 @@ final class HomeApps {
         return out;
     }
 
+    static boolean hidden(String pkg) {
+        return HIDDEN.contains(pkg);
+    }
+
+    /** The app's 16:9 card (its TV art, or its icon), as in "All Apps". */
+    static Bitmap tile(Context c, String pkg) {
+        return appTile(c, null, pkg, 0);
+    }
+
     static Intent launchIntent(PackageManager pm, String pkg) {
         Intent intent = pm.getLeanbackLaunchIntentForPackage(pkg);
         return intent != null ? intent : pm.getLaunchIntentForPackage(pkg);

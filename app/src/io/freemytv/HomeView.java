@@ -65,7 +65,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // tvOS grid (Human Interface Guidelines): content inside the safe area, 80 px from the sides and 60 from top and
     // bottom; 40 px between items; 7 columns of 217 px (the apps). The shelf glass extends 36 px past the tiles (the
     // same padding on all four sides) and the tile corners are concentric with it (glass radius = radius + padding).
-    private static final float MARGIN = 80, CONTENT_R = 1840;
+    private static final float MARGIN = Theme.SAFE_X, CONTENT_R = 1920 - Theme.SAFE_X;   // the 5% safe area (Glass)
     // Hero, anchored at the bottom (a two-line title grows upward).
     private static final float HERO_TITLE_W = 900;
     // Shelf: tiles with corners concentric with the glass (glass radius = tile radius + padding).
@@ -80,7 +80,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // Corner capsule: the height and top offset of the tvOS tab bar (68 and 46).
     private static final float CAPSULE_TOP = 46, CAPSULE_H = 68, BUTTON = 56;
     // Bottom drawer (measured with it open; everything moves up by SHIFT).
-    private static final float SHIFT = 560, ROW_TITLE = 518, ROW_TOP = 540, ROW_H = 126, CARDS_TOP = 708, CARDS_H = 300;
+    private static final float SHIFT = 560, ROW_TITLE = 518, ROW_TOP = 540, ROW_H = 126, CARDS_TOP = 1080 - Theme.SAFE_Y - Theme.WIDGET_H, CARDS_H = Theme.WIDGET_H;
     // "All Apps" sheet.
     private static final int COLUMNS = 5, VISIBLE_ROWS = 3;
     private static final float GRID_W = 300, GRID_H = 169, GRID_GAP = 40, GRID_ROW = 239, GRID_TOP = 196, GRID_RADIUS = 22;
@@ -651,8 +651,17 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         quotePaint.setShadowLayer(14 * k, 0, 1 * k, 0x99000000);
         staleQuote = Ui.text(Ui.medium, 21 * k, 0x99FFFFFF);
         staleQuote.setTextAlign(Paint.Align.RIGHT);
-        rowTitle = Ui.text(Ui.semibold, 25 * k, 0xB3FFFFFF);
-        drawerLabel = Ui.text(Ui.medium, 23 * k, 0xEBFFFFFF);
+        rowTitle = Ui.text(Ui.semibold, Theme.BODY * k, 0xB3FFFFFF);
+        drawerLabel = Ui.text(Ui.medium, 26 * k, 0xEBFFFFFF);
+        wSmall = Ui.text(Ui.semibold, Theme.BODY * k, 0xFFFFFFFF);
+        wBody = Ui.text(Ui.regular, Theme.BODY * k, 0xFFFFFFFF);
+        wBody.setLetterSpacing(Theme.BODY_TRACK);
+        wFigure = Ui.numbers(Ui.light, Theme.FIGURES * k, 0xFFFFFFFF);
+        wFigure.setLetterSpacing(Theme.FIGURES_TRACK);
+        wDial = Ui.numbers(Ui.medium, 30 * k, 0xFF000000);
+        wDial.setTextAlign(Paint.Align.CENTER);
+        wHand.setStyle(Paint.Style.STROKE);
+        wHand.setStrokeCap(Paint.Cap.ROUND);
         drawerLabel.setTextAlign(Paint.Align.CENTER);
         cardTitle = Ui.text(Ui.semibold, 25 * k, 0xB3FFFFFF);
         cardText = Ui.text(Ui.medium, 29 * k, 0xF2FFFFFF);
@@ -730,6 +739,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         if (heroMoving || heroDirty || heroFading) heroLayer.invalidate();
         if (drawerItemsMoving || drawerDirty || bgFading) drawerLayer.invalidate();
         if (gridMoving || gridDirty) sheetLayer.invalidate();
+        // The clock widget's second hand: the drawer is redrawn once a second while it's open (the frame loop already
+        // wakes every second when still).
+        long second = System.currentTimeMillis() / 1000;
+        if (drawerOpen && second != clockSecond) {
+            clockSecond = second;
+            drawerLayer.invalidate();
+        }
         if (drawerMoving || bgFading) sky.invalidate();
         if (bgFading || (drawerWasMoving && !drawerMoving)) platter.invalidate();
         drawerWasMoving = drawerMoving;
@@ -1617,12 +1633,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             drawerRects[i].set(x, top, x + tw, top + ROW_H * k);
             x += tw + gap;
         }
-        float cardsTop = CARDS_TOP * k, split = left + (right - left) * 0.585f;
-        // The calendar, when set, takes the quotes' place (their prices still show on the tab row).
-        boolean wx = Prefs.weather(), qt = Agenda.on() || (Prefs.quotes() && HomeData.active().length > 0);
-        // A card that is off gives its room to the other one.
-        weatherCard.set(left, cardsTop, qt ? split - 16 * k : right, cardsTop + CARDS_H * k);
-        quotesCard.set(wx ? split + 16 * k : left, cardsTop, right, cardsTop + CARDS_H * k);
+        // iOS widgets: the clock and the weather small, the calendar (or the quotes) medium, from the left.
+        float cardsTop = CARDS_TOP * k, ch = Theme.WIDGET_H * k, small = Theme.WIDGET_S * k, g = 40 * k;
+        float wl = left;
+        clockCard.set(wl, cardsTop, wl + small, cardsTop + ch);
+        wl += small + g;
+        if (Prefs.weather()) {
+            weatherCard.set(wl, cardsTop, wl + small, cardsTop + ch);
+            wl += small + g;
+        } else {
+            weatherCard.setEmpty();
+        }
+        quotesCard.set(wl, cardsTop, Math.min(right, wl + Theme.WIDGET_M * k), cardsTop + ch);
+        widgetShaders = null;
         drawerDirty = true;
     }
 
@@ -1684,6 +1707,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         for (int i = 0; i < drawerItems.size(); i++) if (drawerFocus[i].value > 0.02f && (top < 0 || drawerFocus[i].value > drawerFocus[top].value)) top = i;
         for (int i = 0; i < drawerItems.size(); i++) if (i != top) drawDrawerTile(c, i);
         if (top >= 0) drawDrawerTile(c, top);
+        drawClockWidget(c, clockCard);
         if (Prefs.weather()) drawWeatherCard(c, weatherCard);
         if (Agenda.on()) drawAgendaCard(c, quotesCard);
         else if (Prefs.quotes() && HomeData.active().length > 0) drawQuotesCard(c, quotesCard);
@@ -1713,52 +1737,130 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int ink = blend(tone(off ? 0xFF8E8E93 : L_INK, off ? 0x6BFFFFFF : 0xF2FFFFFF), INK, f);
         Symbols.draw(getContext(), c, it.symbol, cx, cell.top + cell.height() * 0.4f, 34 * k * s, ink);
         drawerLabel.setColor(ink);
-        drawerLabel.setTextSize(23 * k * s);
+        drawerLabel.setTextSize(26 * k * s);
         float room = cell.width() - 16 * k, wide = drawerLabel.measureText(it.label);
         // A long name ("Home Settings", an input you renamed) shrinks a little before it gets cut.
-        if (wide > room) drawerLabel.setTextSize(Math.max(18 * k * s, 23 * k * s * room / wide));
+        if (wide > room) drawerLabel.setTextSize(Math.max(22 * k * s, 26 * k * s * room / wide));
         fitPaint.set(drawerLabel);
         String label = TextUtils.ellipsize(it.label, fitPaint, room, TextUtils.TruncateAt.END).toString();
         c.drawText(label, cx, cell.top + cell.height() * 0.8f, drawerLabel);
-        drawerLabel.setTextSize(23 * k);
+        drawerLabel.setTextSize(26 * k);
     }
 
-    /** Weather for your location: now (large), the next 6 hours, and sunrise and sunset. */
+    // MARK: - iOS widgets (Glass): opaque faces with 28 dp corners, each drawn its own way
+
+    private final RectF clockCard = new RectF();
+    private Paint wSmall, wBody, wFigure, wDial;
+    private final Paint wHand = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private LinearGradient[] widgetShaders;   // the weather's sky, day and night (made again with the layout)
+
+    /** A widget's face: its soft shadow and its rounded background (a colour, or a shader). */
+    private void widgetFace(Canvas c, RectF r, int color, Shader shader) {
+        float radius = Theme.WIDGET_RADIUS * k;
+        tmp.set(r);
+        tmp.offset(0, 16 * k);
+        shadow.setColor(tone(0x29102040, 0x73000000));
+        shadows.draw(c, tmp, radius, SHADOW_BLUR * k, shadow);
+        fill.setShader(shader);
+        fill.setColor(color);
+        c.drawRoundRect(r, radius, radius, fill);
+        fill.setShader(null);
+    }
+
+    /** Weather for your location, as iOS's small weather widget: city, temperature, sky and the day's high and low. */
     private void drawWeatherCard(Canvas c, RectF r) {
-        drawerCard(c, r);
+        if (widgetShaders == null) {
+            widgetShaders = new LinearGradient[] {
+                new LinearGradient(0, r.top, 0, r.bottom, Theme.SKY_DAY[0], Theme.SKY_DAY[1], Shader.TileMode.CLAMP),
+                new LinearGradient(0, r.top, 0, r.bottom, Theme.SKY_NIGHT[0], Theme.SKY_NIGHT[1], Shader.TileMode.CLAMP),
+            };
+        }
+        widgetFace(c, r, 0xFFFFFFFF, widgetShaders[data.weather.isDay && night < 0.5f ? 0 : 1]);
         if (Ui.LEGACY) weatherSnapshot.draw(c, r, drawerCardsKey(), cc -> drawWeather(cc, r));
         else drawWeather(c, r);
     }
 
     private void drawWeather(Canvas c, RectF r) {
         refreshDrawerText();
-        float x = r.left + 34 * k;
-        c.drawText(weatherTitle, x, r.top + 54 * k, cardTitle);
+        float x = r.left + Theme.WIDGET_PAD_X * k, top = r.top + Theme.WIDGET_PAD_Y * k;
+        fitPaint.set(wSmall);
+        c.drawText(TextUtils.ellipsize(weatherTitle, fitPaint, r.width() - 2 * Theme.WIDGET_PAD_X * k, TextUtils.TruncateAt.END).toString(),
+                x, top + Ui.cap(wSmall), wSmall);
         HomeData.Weather wx = textWeather;
         if (Double.isNaN(wx.temp)) {
-            c.drawText(Ui.tr("No weather data right now."), x, r.top + 120 * k, cardDim);
+            c.drawText(Ui.tr("No weather data right now."), x, top + 120 * k, wBody);
             return;
         }
+        c.drawText(nowTemp, x - Ui.leftBearing(wFigure, nowTemp), top + 40 * k + Ui.cap(wFigure), wFigure);
+        float bottom = r.bottom - Theme.WIDGET_PAD_Y * k;
         String symbol = Symbols.weather(wx.code, wx.isDay);
-        float sw = Symbols.width(getContext(), symbol, 52 * k);
-        Symbols.draw(getContext(), c, symbol, x + sw / 2, r.top + 132 * k, 52 * k, drawerInk(0.95f));
-        c.drawText(nowTemp, x + sw + 18 * k - Ui.leftBearing(bigTemp, nowTemp), r.top + 170 * k, bigTemp);
-        c.drawText(HomeData.condition(wx.code, wx.isDay), x, r.top + 220 * k, cardText);
-        c.drawText(highLow, x, r.top + 258 * k, cardDim);
-        float split = r.left + 392 * k;
-        fill.setShader(null);
-        fill.setColor(tone(0x1A000000, 0x24FFFFFF));
-        c.drawRoundRect(split - k, r.top + 34 * k, split + k, r.bottom - 34 * k, k, k, fill);
-        float hx = split + 30 * k, hw = (r.right - 30 * k - hx) / 6;
-        for (int i = 0; i < wx.hours.size() && i < 6; i++) {
-            float hc = hx + hw * (i + 0.5f);
-            c.drawText(hourText[i], hc, r.top + 96 * k, hourPaint);
-            Symbols.draw(getContext(), c, Symbols.weather(wx.hourCode.get(i), wx.hourDay.get(i)), hc, r.top + 142 * k, 30 * k, drawerInk(0.9f));
-            c.drawText(hourTempText[i], hc, r.top + 196 * k, hourTemp);
+        float size = 34 * k, sw = Symbols.width(getContext(), symbol, size);
+        Symbols.draw(getContext(), c, symbol, x + sw / 2, bottom - 40 * k - Ui.cap(wBody) - size / 2 - 6 * k, size, 0xFFFFFFFF);
+        String condition = HomeData.condition(wx.code, wx.isDay);
+        float room = r.width() - 2 * Theme.WIDGET_PAD_X * k;
+        if (!condition.equals(conditionSource) || room != conditionRoom) {
+            conditionSource = condition;
+            conditionRoom = room;
+            fitPaint.set(wBody);
+            conditionFit = TextUtils.ellipsize(condition, fitPaint, room, TextUtils.TruncateAt.END).toString();
         }
-        float sx = hx, base = r.top + 258 * k;
-        if (wx.sunrise != 0) sx = sunItem(c, "sunrise", sunriseText, sx, base) + 36 * k;
-        if (wx.sunset != 0) sunItem(c, "sunset", sunsetText, sx, base);
+        c.drawText(conditionFit, x, bottom - 40 * k, wBody);
+        c.drawText(highLow, x, bottom, wBody);
+    }
+
+    /** iOS's clock widget: a dial with numerals and ticks, white by day and black at night; the hands move each second. */
+    private void drawClockWidget(Canvas c, RectF r) {
+        int face = tone(0xFFFFFFFF, 0xFF000000), ink = tone(0xFF000000, 0xFFFFFFFF);
+        widgetFace(c, r, face, null);
+        float cx = r.centerX(), cy = r.centerY(), radius = r.width() / 2 - 22 * k;
+        if (Ui.LEGACY) clockSnapshot.draw(c, r, "dial|" + Float.floatToIntBits(dark()) + "|" + Ui.generation, cc -> drawDial(cc, cx, cy, radius, ink));
+        else drawDial(c, cx, cy, radius, ink);
+        java.util.Calendar now = clockNow;
+        now.setTimeInMillis(System.currentTimeMillis());
+        float h = now.get(java.util.Calendar.HOUR) + now.get(java.util.Calendar.MINUTE) / 60f;
+        float m = now.get(java.util.Calendar.MINUTE) + now.get(java.util.Calendar.SECOND) / 60f;
+        int sec = now.get(java.util.Calendar.SECOND);
+        hand(c, cx, cy, h / 12f, radius * 0.5f, 0, 9 * k, ink);
+        hand(c, cx, cy, m / 60f, radius * 0.8f, 0, 7 * k, ink);
+        hand(c, cx, cy, sec / 60f, radius * 0.88f, radius * 0.16f, 3 * k, Theme.CLOCK_HAND);
+        fill.setColor(Theme.CLOCK_HAND);
+        c.drawCircle(cx, cy, 7 * k, fill);
+        fill.setColor(face);
+        c.drawCircle(cx, cy, 3 * k, fill);
+    }
+
+    private long clockSecond;
+    private String conditionSource = "", conditionFit = "";
+    private float conditionRoom;
+    private final java.util.Calendar clockNow = java.util.Calendar.getInstance();
+    private final Snapshot clockSnapshot = new Snapshot();
+
+    private void drawDial(Canvas c, float cx, float cy, float radius, int ink) {
+        wHand.setStrokeCap(Paint.Cap.ROUND);
+        for (int i = 0; i < 60; i++) {
+            boolean hour = i % 5 == 0;
+            double a = i / 60.0 * Math.PI * 2;
+            float sin = (float) Math.sin(a), cos = (float) Math.cos(a), r1 = radius * (hour ? 0.9f : 0.94f);
+            wHand.setColor(Ui.alpha(ink, hour ? 0.9f : 0.35f));
+            wHand.setStrokeWidth((hour ? 4 : 2) * k);
+            c.drawLine(cx + sin * r1, cy - cos * r1, cx + sin * radius, cy - cos * radius, wHand);
+        }
+        wDial.setColor(ink);
+        float half = Ui.halfCap(wDial);
+        for (int n = 1; n <= 12; n++) {
+            double a = n / 12.0 * Math.PI * 2;
+            c.drawText(DIAL[n], cx + (float) Math.sin(a) * radius * 0.7f, cy - (float) Math.cos(a) * radius * 0.7f + half, wDial);
+        }
+    }
+
+    private static final String[] DIAL = {"", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"};
+
+    private void hand(Canvas c, float cx, float cy, float turn, float length, float tail, float width, int color) {
+        double a = turn * Math.PI * 2;
+        float sin = (float) Math.sin(a), cos = (float) Math.cos(a);
+        wHand.setColor(color);
+        wHand.setStrokeWidth(width);
+        c.drawLine(cx - sin * tail, cy + cos * tail, cx + sin * length, cy - cos * length, wHand);
     }
 
     private void refreshDrawerText() {
@@ -1842,34 +1944,54 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private final Snapshot weatherSnapshot = new Snapshot(), quotesSnapshot = new Snapshot(), agendaSnapshot = new Snapshot();
 
-    /** The calendar's next events (Agenda): day, time and title, one per row. */
+    /** iOS's calendar widget: today's weekday in red and its date, then the next events, each with its colour bar. */
     private void drawAgendaCard(Canvas c, RectF r) {
-        drawerCard(c, r);
+        widgetFace(c, r, tone(Theme.WIDGET, Theme.WIDGET_DARK), null);
         if (Ui.LEGACY) agendaSnapshot.draw(c, r, drawerCardsKey(), cc -> drawAgenda(cc, r));
         else drawAgenda(c, r);
     }
 
     private void drawAgenda(Canvas c, RectF r) {
         refreshAgendaText();
-        float x = r.left + 34 * k;
-        if (agendaLaidOut != agendaVersion || agendaWidth != r.width() || agendaSize != cardText.getTextSize()) layoutAgenda(r.width());
-        c.drawText(agendaHeading, x, r.top + 54 * k, cardTitle);
+        float x = r.left + Theme.WIDGET_PAD_X * k, top = r.top + Theme.WIDGET_PAD_Y * k;
+        if (agendaLaidOut != agendaVersion || agendaWidth != r.width() || agendaSize != wBody.getTextSize()) layoutAgenda(r.width());
+        wSmall.setColor(tone(Theme.RED, Theme.RED_DARK));
+        c.drawText(agendaWeekday, x, top + Ui.cap(wSmall), wSmall);
+        wFigure.setColor(tone(Theme.LABEL, Theme.LABEL_DARK));
+        c.drawText(agendaToday, x - Ui.leftBearing(wFigure, agendaToday), top + 40 * k + Ui.cap(wFigure), wFigure);
+        wSmall.setColor(0xFFFFFFFF);
+        wFigure.setColor(0xFFFFFFFF);
+        float ex = x + 220 * k, line = 38 * k, row = 2 * line + 14 * k;
+        int ink = tone(Theme.LABEL, Theme.LABEL_DARK), ink2 = tone(Theme.LABEL_2, Theme.LABEL_2_DARK);
         if (agendaRows == 0) {
-            c.drawText(agendaEmpty, x, r.top + 120 * k, cardDim);
+            if (agendaEmptyLayout == null) return;
+            agendaEmptyPaint.setColor(ink2);
+            c.save();
+            c.translate(ex, top - 4 * k);
+            agendaEmptyLayout.draw(c);
+            c.restore();
             return;
         }
-        for (int j = 0; j < agendaRows; j++) {
-            float base = r.top + (110 + 52 * j) * k;
-            c.drawText(agendaDay[j], x, base, cardDim);
-            c.drawText(agendaWhen[j], x + agendaTimeX, base, cardText);
-            c.drawText(agendaFit[j], x + agendaTitleX, base, cardText);
+        for (int j = 0; j < Math.min(3, agendaRows); j++) {
+            float y = top + j * row;
+            fill.setColor(Theme.EVENTS[j % Theme.EVENTS.length]);
+            c.drawRoundRect(ex, y, ex + 6 * k, y + row - 14 * k, 3 * k, 3 * k, fill);
+            wBody.setColor(ink);
+            c.drawText(agendaFit[j], ex + 22 * k, y + Ui.cap(wBody) + 4 * k, wBody);
+            wBody.setColor(ink2);
+            c.drawText(agendaLine[j], ex + 22 * k, y + line + Ui.cap(wBody) + 4 * k, wBody);
         }
+        wBody.setColor(0xFFFFFFFF);
     }
 
     // The calendar's text, made again only when the events, the minute or the language change (drawn on every frame).
     private static final int AGENDA_ROWS = 4;
     private final String[] agendaDay = new String[AGENDA_ROWS], agendaWhen = new String[AGENDA_ROWS];
     private final String[] agendaTitle = new String[AGENDA_ROWS], agendaFit = new String[AGENDA_ROWS];
+    private final String[] agendaLine = new String[AGENDA_ROWS];
+    private final TextPaint agendaEmptyPaint = new TextPaint(Paint.ANTI_ALIAS_FLAG);
+    private StaticLayout agendaEmptyLayout;
+    private String agendaWeekday = "", agendaToday = "";
     private int agendaRows, agendaVersion, agendaLaidOut = -1, agendaGeneration = -1;
     private List<Agenda.Event> agendaList;
     private long agendaMinute = -1, agendaFetched = -1;
@@ -1886,6 +2008,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         agendaFetched = data.eventsAt;
         agendaVersion++;
         agendaHeading = Ui.tr("Calendar");
+        agendaWeekday = new java.text.SimpleDateFormat("EEEE", Ui.locale()).format(now).toUpperCase(Ui.locale());
+        agendaToday = String.valueOf(java.util.Calendar.getInstance().get(java.util.Calendar.DAY_OF_MONTH));
         agendaEmpty = data.eventsAt == 0 ? "" : Ui.tr("No events in the next 7 days.");
         agendaRows = 0;
         nextEvent = "";
@@ -1899,21 +2023,20 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
     }
 
-    /** Columns as wide as their longest entry; titles cut to what's left of the card. */
+    /** Each event's title cut to the column, and its day and time under it ("Today · 18:00"). */
     private void layoutAgenda(float width) {
         agendaLaidOut = agendaVersion;
         agendaWidth = width;
-        agendaSize = cardText.getTextSize();
-        float dayW = 0, timeW = 0;
+        agendaSize = wBody.getTextSize();
+        float room = width - 2 * Theme.WIDGET_PAD_X * k - 242 * k;
+        agendaEmptyPaint.set(wBody);
+        agendaEmptyLayout = agendaEmpty.isEmpty() ? null : StaticLayout.Builder.obtain(agendaEmpty, 0, agendaEmpty.length(),
+                agendaEmptyPaint, Math.max(1, Math.round(room))).setMaxLines(3).setEllipsize(TextUtils.TruncateAt.END).build();
+        fitPaint.set(wBody);
         for (int j = 0; j < agendaRows; j++) {
-            dayW = Math.max(dayW, cardDim.measureText(agendaDay[j]));
-            timeW = Math.max(timeW, cardText.measureText(agendaWhen[j]));
-        }
-        agendaTimeX = dayW + 24 * k;
-        agendaTitleX = agendaTimeX + timeW + 24 * k;
-        fitPaint.set(cardText);
-        for (int j = 0; j < agendaRows; j++) {
-            agendaFit[j] = TextUtils.ellipsize(agendaTitle[j], fitPaint, width - 68 * k - agendaTitleX, TextUtils.TruncateAt.END).toString();
+            agendaFit[j] = TextUtils.ellipsize(agendaTitle[j], fitPaint, room, TextUtils.TruncateAt.END).toString();
+            String line = agendaDay[j] + " · " + agendaWhen[j];
+            agendaLine[j] = TextUtils.ellipsize(line, fitPaint, room, TextUtils.TruncateAt.END).toString();
         }
     }
 

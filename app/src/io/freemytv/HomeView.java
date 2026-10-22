@@ -3106,6 +3106,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void drawLightCard(Canvas c, int i) {
         RectF base = cardRects[i];
         Recs.Pick p = i < cards.size() ? cards.get(i) : null;
+        if (p == null && (tab == RECENT || tab == YOUTUBE)) return;   // fewer than three: no empty placeholders
         float v = cardFocus[i].value, f = Ui.clamp(v), s = 1 + 0.05f * v;
         float bw = base.width(), bh = base.height(), r0 = 18 * k;
         float cx = base.centerX(), cy = base.centerY() - 6 * k * v;

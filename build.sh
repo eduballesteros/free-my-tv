@@ -76,8 +76,17 @@ EOF
 # --- Build
 "$BT/aapt2" compile --dir app/res -o out/res.zip
 # Fonts uncompressed: Android reads them straight from the APK.
+# Assets: the app's, plus your own font when custom_font names one (a .ttf or .otf on this computer; it goes into
+# the APK only, never into the repository).
+cp -r app/assets out/assets
+FONT_FILE="$(prop custom_font '')"
+if [ -n "$FONT_FILE" ]; then
+  [ -f "$FONT_FILE" ] || { echo "config.properties: custom_font \"$FONT_FILE\" not found" >&2; exit 1; }
+  cp "$FONT_FILE" out/assets/fonts/custom.ttf
+  echo "Font: $(basename "$FONT_FILE") (custom_font)"
+fi
 "$BT/aapt2" link -o out/base.apk -I "$AJ" --manifest app/AndroidManifest.xml --java out/gen out/res.zip \
-  --min-sdk-version 26 --target-sdk-version 33 -A app/assets -0 ttf
+  --min-sdk-version 26 --target-sdk-version 33 -A out/assets -0 ttf
 # Windows aapt2 packs assets with backslash separators ("assets/symbols\x.png") and Android
 # cannot find them: the home screen loses its icons and fonts. Rename the zip entries to "/".
 case "$(uname -s 2>/dev/null)" in

@@ -1,0 +1,500 @@
+<title>Free My TV Glass</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+<!--
+  Free My TV Glass: the home screen's design system, in one file, after iOS and tvOS (no Apple marks or logos).
+  The app draws in a 1920×1080 space (k = screen width / 1920); Android TV's 960×540 dp screen makes 1 dp = 2 px there.
+  Type sizes are tvOS's own text styles, which are given in pixels at 1080p.
+  The JSON block (id="tokens") is the single source: HomeView mirrors it value for value.
+-->
+<style>
+  /* Layout: a reference sheet. The live TV first, then each part of the system with its values beside its preview. */
+  :root {
+    --page: #EEF0F5; --sheet: #FFFFFF; --ink: #121318; --ink-2: #4B4E5C; --rule: #D9DCE5; --accent: #2F6FD0;
+    --font: "SF Pro Display", "SF Pro", "Inter", "Helvetica Neue", Arial, system-ui, sans-serif;   /* SF only if installed here */
+    --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --page: #0D0E12; --sheet: #17181E; --ink: #EDEEF3; --ink-2: #A3A7B7; --rule: #2A2C35; --accent: #7FA6FF; color-scheme: dark; }
+  }
+  :root[data-theme="dark"] { --page: #0D0E12; --sheet: #17181E; --ink: #EDEEF3; --ink-2: #A3A7B7; --rule: #2A2C35; --accent: #7FA6FF; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--ink); font: 400 15px/1.55 var(--font);
+    padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 32px 64px;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; display: grid; gap: 28px; }
+  header h1 { font-size: clamp(30px, 4vw, 44px); font-weight: 600; letter-spacing: -0.02em; margin: 0; text-wrap: balance; }
+  header p { color: var(--ink-2); margin: 6px 0 0; max-width: 70ch; }
+  section { background: var(--sheet); border: 1px solid var(--rule); border-radius: 20px; padding: 24px; display: grid; gap: 18px; min-width: 0; }
+  section > h2 { margin: 0; font-size: 20px; font-weight: 600; letter-spacing: -0.012em; }
+  .eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); font-weight: 600; }
+  .note { color: var(--ink-2); margin: 0; max-width: 74ch; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 18px; align-items: start; }
+  .scroll { overflow-x: auto; min-width: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  th { font-weight: 600; color: var(--ink-2); font-size: 12px; letter-spacing: 0.05em; text-transform: uppercase; }
+  code, .num { font-family: var(--mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .chip { display: inline-block; width: 14px; height: 14px; border-radius: 4px; vertical-align: -2px; margin-right: 6px; box-shadow: inset 0 0 0 1px rgba(127,127,127,.35); }
+  .pass, .fail { font-weight: 600; }
+  .pass { color: #1F8A4C; } .fail { color: #C2352A; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .pass { color: #5BD58E; } :root:not([data-theme="light"]) .fail { color: #FF8478; } }
+  :root[data-theme="dark"] .pass { color: #5BD58E; } :root[data-theme="dark"] .fail { color: #FF8478; }
+
+  .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+  .seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 999px; padding: 3px; gap: 2px; background: var(--page); }
+  .seg button { font: 500 13px var(--font); color: var(--ink-2); background: none; border: 0; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+  .seg button[aria-pressed="true"] { background: var(--sheet); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+  .seg button:focus-visible, .tv:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .hint { color: var(--ink-2); font-size: 13px; }
+
+  /* ---------- The TV: everything inside is in the 1920×1080 space, scaled to fit ---------- */
+  .tvbox { position: relative; width: 100%; aspect-ratio: 16 / 9; max-width: 100%; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.25); background: #000; }
+  .tv { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; overflow: hidden; font-family: var(--font); color: var(--label);
+        --spring: cubic-bezier(0.3, 1.18, 0.4, 1); --ease: cubic-bezier(0.25, 0.9, 0.3, 1); }
+  /* iOS semantic colours; secondary at 80% (iOS's 60% stays under 4.5:1 on white) */
+  .tv[data-mode="light"] { --label: #000000; --label-2: rgba(60,60,67,0.80); --widget: #FFFFFF; --red: #D70015; --dial: #FFFFFF; --dial-ink: #000000;
+                           --glass: rgba(255,255,255,0.30); --panel: rgba(255,255,255,0.72); --edge: rgba(255,255,255,0.20); --shadow: rgba(10,20,50,0.20); }
+  .tv[data-mode="dark"]  { --label: #FFFFFF; --label-2: rgba(235,235,245,0.60); --widget: #1C1C1E; --red: #FF453A; --dial: #000000; --dial-ink: #FFFFFF;
+                           --glass: rgba(40,40,46,0.34); --panel: rgba(30,30,34,0.70); --edge: rgba(255,255,255,0.16); --shadow: rgba(0,0,0,0.45); }
+  .wall { position: absolute; inset: 0; transition: background 1.6s ease; }
+  .safe { position: absolute; inset: 54px 96px; outline: 3px dashed transparent; pointer-events: none; z-index: 9; }
+  .tv.show-safe .safe { outline-color: rgba(255,60,60,.8); }
+
+  /* Glass: a thin material for the dock, a regular one for panels with text. Specular highlight on top, 1px inner edge. */
+  .glass, .panel { position: relative; backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); }
+  .glass { background: var(--glass); }
+  .panel { background: var(--panel); }
+  .glass::before, .panel::before { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    box-shadow: inset 0 0 0 1px var(--edge), inset 0 1.5px 0 rgba(255,255,255,.35);
+    background: linear-gradient(180deg, rgba(255,255,255,.22), rgba(255,255,255,0) 42%); }
+
+  /* Type: tvOS text styles (px at 1080p), three sizes; semibold titles with slightly negative tracking */
+  .t-title { font-size: 76px; font-weight: 600; letter-spacing: -0.012em; line-height: 1.05; }
+  .t-head { font-size: 38px; font-weight: 600; letter-spacing: -0.008em; line-height: 1.15; }
+  .t-body { font-size: 29px; font-weight: 400; letter-spacing: -0.004em; line-height: 1.25; }
+  .t-2 { color: var(--label-2); }
+
+  .focusable { position: relative; transition: transform 290ms var(--spring), opacity 260ms var(--ease), filter 290ms var(--ease); }
+  .tv.has-focus .focusable:not(.is-focus) { opacity: 0.8; }
+  .focusable.is-focus { transform: scale(1.08); z-index: 5; }
+  .lift { transition: box-shadow 290ms var(--spring); }
+  .is-focus .lift, .is-focus.lift { box-shadow: 0 34px 60px rgba(0,0,0,.38), 0 0 0 1.5px rgba(255,255,255,.55) !important; }
+  .sheen { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 260ms;
+           background: linear-gradient(125deg, rgba(255,255,255,.42) 0%, rgba(255,255,255,0) 34%); }
+  .is-focus .sheen { opacity: 1; }
+
+  .head { position: absolute; left: 96px; top: 54px; }
+  .head .t-head { margin-bottom: 4px; }
+
+  /* Widgets: iOS faces, 28 dp (56 px) corners; small 336×336, medium 712×336 */
+  .widgets { position: absolute; left: 96px; top: 222px; display: flex; gap: 40px; }
+  .widget { border-radius: 56px; overflow: hidden; box-shadow: 0 16px 36px var(--shadow); }
+  .w-s { width: 336px; height: 336px; }
+  .w-m { width: 712px; height: 336px; }
+  .clockface { background: var(--dial); display: grid; place-items: center; }
+  .clockface svg { width: 300px; height: 300px; }
+  .weather { color: #FFFFFF; padding: 30px 34px; display: flex; flex-direction: column; justify-content: space-between; }
+  .weather .temp { font-size: 108px; font-weight: 300; letter-spacing: -0.02em; line-height: 1; }
+  .weather .small { font-size: 29px; font-weight: 500; }
+  .weather svg { width: 40px; height: 40px; }
+  .cal { background: var(--widget); display: grid; grid-template-columns: 210px 1fr; padding: 30px 34px; gap: 18px; }
+  .cal .day { color: var(--red); font-size: 29px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; }
+  .cal .date { font-size: 108px; font-weight: 300; letter-spacing: -0.02em; line-height: 1; color: var(--label); }
+  .cal .events { display: grid; align-content: start; gap: 18px; }
+  .cal .ev { border-left: 6px solid #5E5CE6; padding-left: 16px; }
+  .cal .ev:nth-child(2) { border-color: #30B0C7; } .cal .ev:nth-child(3) { border-color: #FF9F0A; }
+  .cal .ev .t-body { color: var(--label); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* App grid: squircle icons, name under each (on the wallpaper, in the mode's label colour) */
+  .grid { position: absolute; left: 96px; right: 96px; top: 628px; display: flex; gap: 66px; }
+  .app { display: flex; flex-direction: column; align-items: center; gap: 14px; width: 150px; }
+  .icon { position: relative; width: 150px; height: 150px; border-radius: 22%; }
+  .icon .shape { position: absolute; inset: 0; -webkit-mask: var(--sq) center / 100% 100% no-repeat; mask: var(--sq) center / 100% 100% no-repeat; display: grid; place-items: center; }
+  .icon .shape svg { width: 48%; height: 48%; }
+  .icon.lift { box-shadow: 0 10px 22px var(--shadow); }
+  .app .name { font-size: 29px; font-weight: 400; color: var(--label); white-space: nowrap; }
+
+  /* Dock: thin glass, five favourites, no names (the focused one's name shows under it, as on tvOS) */
+  .dock { position: absolute; left: 50%; bottom: 54px; transform: translateX(-50%); border-radius: 64px; padding: 24px 32px 50px; display: flex; gap: 36px; box-shadow: 0 20px 44px var(--shadow); }
+  .dock .app { width: 132px; gap: 8px; }
+  .dock .icon { width: 132px; height: 132px; }
+  .dock .name { font-size: 25px; opacity: 0; height: 0; transition: opacity 200ms; }
+  .dock .is-focus .name { opacity: 1; }
+
+  /* Previews outside the TV */
+  .walls { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .wsw { border-radius: 14px; aspect-ratio: 16 / 9; max-width: 100%; display: flex; align-items: flex-end; padding: 8px 10px; font-size: 12px; font-weight: 600; }
+  .scale { display: grid; gap: 14px; }
+  .scale div { display: grid; grid-template-columns: 200px 1fr; gap: 16px; align-items: baseline; min-width: 0; }
+  .scale .spec { color: var(--ink-2); font-size: 13px; }
+  .scale .sample { min-width: 0; overflow-wrap: anywhere; }
+  canvas { width: 100%; height: 220px; display: block; border-radius: 12px; background: var(--page); }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+  .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+  @media (max-width: 560px) { .scale div { grid-template-columns: 1fr; gap: 2px; } }
+  @media (prefers-reduced-motion: reduce) { .focusable, .wall, .sheen, .lift { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Sistema de diseño · Free My TV</div>
+    <h1>Free My TV Glass</h1>
+    <p>La pantalla de inicio de la tele, siguiendo iOS y tvOS: estilos de texto de tvOS, colores semánticos, widgets con su propia cara, dock de cristal sin nombres, fondos de manchas de color según la hora y foco con brillo especular. Sin marcas ni logos de Apple.</p>
+  </header>
+
+  <section aria-labelledby="live">
+    <h2 id="live">La tele, en vivo</h2>
+    <div class="controls">
+      <span class="hint">Hora:</span>
+      <div class="seg" id="time" role="group" aria-label="Hora del día">
+        <button type="button" data-v="auto" aria-pressed="true">Ahora</button>
+        <button type="button" data-v="dawn" aria-pressed="false">Amanecer</button>
+        <button type="button" data-v="day" aria-pressed="false">Día</button>
+        <button type="button" data-v="dusk" aria-pressed="false">Atardecer</button>
+        <button type="button" data-v="night" aria-pressed="false">Noche</button>
+      </div>
+      <span class="hint">Modo:</span>
+      <div class="seg" id="mode" role="group" aria-label="Modo">
+        <button type="button" data-v="auto" aria-pressed="true">Automático</button>
+        <button type="button" data-v="light" aria-pressed="false">Claro</button>
+        <button type="button" data-v="dark" aria-pressed="false">Oscuro</button>
+      </div>
+      <div class="seg" id="safe" role="group" aria-label="Zona segura">
+        <button type="button" data-v="on" aria-pressed="false">Zona segura 5%</button>
+      </div>
+    </div>
+    <div class="tvbox" id="tvbox">
+      <div class="tv" id="tv" tabindex="0" aria-label="Pantalla de inicio de ejemplo. Usa las flechas para mover el foco.">
+        <div class="wall" id="wall"></div>
+        <div class="safe"></div>
+        <div class="head">
+          <div class="t-head t-2" id="date">Jueves, 22 de octubre</div>
+          <div class="t-title" id="greeting">Buenas tardes, Edu</div>
+        </div>
+        <div class="widgets">
+          <div class="widget w-s clockface focusable lift" data-row="0"><span class="sheen"></span><svg id="dial" viewBox="-150 -150 300 300" aria-label="Reloj"></svg></div>
+          <div class="widget w-s weather focusable lift" id="weather" data-row="0"><span class="sheen"></span>
+            <div class="small">Sevilla</div>
+            <div class="temp">25°</div>
+            <div>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.5" fill="#FFD60A"/><g stroke="#FFD60A" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></g></svg>
+              <div class="small">Despejado</div>
+              <div class="small">Máx. 26° · Mín. 11°</div>
+            </div>
+          </div>
+          <div class="widget w-m cal focusable lift" data-row="0"><span class="sheen"></span>
+            <div><div class="day" id="wday">Jueves</div><div class="date" id="mday">22</div></div>
+            <div class="events">
+              <div class="ev"><div class="t-body">Bloque 2: IA Workflow</div><div class="t-body t-2">18:00 – 19:30</div></div>
+              <div class="ev"><div class="t-body">Bloque 3.1</div><div class="t-body t-2">Sáb. 18:00</div></div>
+              <div class="ev"><div class="t-body">Bloque 3.2</div><div class="t-body t-2">Dom. 18:00</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="grid" id="grid"></div>
+        <div class="dock glass" id="dock"></div>
+      </div>
+    </div>
+    <p class="note">Haz clic en la tele y usa las flechas, como con el mando. El foco crece un 8&nbsp;%, se eleva con sombra, gana un filo blanco y un brillo en diagonal; el resto baja al 80&nbsp;%. En el dock el nombre solo aparece bajo la app con foco. Iconos y nombres de ejemplo: en la tele irán tus apps.</p>
+  </section>
+
+  <section aria-labelledby="walls">
+    <h2 id="walls">Fondos según la hora</h2>
+    <p class="note">Manchas de color suaves sobre una base, como los fondos de iOS, en cuatro momentos y en claro y oscuro. Automático: claro de la salida del sol + 30&nbsp;min a la puesta − 30&nbsp;min. En la tele cada fondo se pinta una vez en un bitmap (y su versión desenfocada para el cristal), y el cambio es un fundido de 2&nbsp;s.</p>
+    <div class="walls" id="wallsw"></div>
+  </section>
+
+  <section aria-labelledby="mat">
+    <h2 id="mat">Materiales</h2>
+    <div class="cols">
+      <div class="scroll"><table>
+        <tr><th>Material</th><th>Claro</th><th>Oscuro</th></tr>
+        <tr><td>Fino (dock)</td><td class="num">blanco 30 %</td><td class="num">#28282E 34 %</td></tr>
+        <tr><td>Normal (paneles con texto)</td><td class="num">blanco 72 %</td><td class="num">#1E1E22 70 %</td></tr>
+        <tr><td>Desenfoque · saturación</td><td class="num" colspan="2">40 px · 180 %</td></tr>
+        <tr><td>Filo interior</td><td class="num">blanco 20 %, 1 px</td><td class="num">blanco 16 %, 1 px</td></tr>
+        <tr><td>Brillo especular</td><td class="num" colspan="2">línea superior blanco 35 % + degradado 22 % → 0 en el 42 % de arriba</td></tr>
+        <tr><td>Widgets</td><td class="num">#FFFFFF opaco</td><td class="num">#1C1C1E opaco</td></tr>
+      </table></div>
+      <p class="note">Como en iOS, los widgets son opacos, cada uno con su cara; el cristal es para el dock, los paneles y los ajustes. En la tele el desenfoque no se calcula en cada fotograma: el fondo es fijo, se desenfoca una vez cuando cambia y cada cristal recorta su trozo.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="type">
+    <h2 id="type">Tipografía: estilos de tvOS</h2>
+    <p class="note">Tres tamaños, los de tvOS a 1080p, legibles a 3&nbsp;m. Con <code>custom_font</code> la tele usa SF Pro si la tienes; si no, Inter, con el mismo espaciado.</p>
+    <div class="scale">
+      <div><span class="spec">Title 1 · 76 px · 600 · −1,2 %</span><span class="sample" style="font-size:44px;font-weight:600;letter-spacing:-0.012em">Buenas tardes, Edu</span></div>
+      <div><span class="spec">Headline · 38 px · 600 · −0,8 %</span><span class="sample" style="font-size:26px;font-weight:600;letter-spacing:-0.008em">Jueves, 22 de octubre</span></div>
+      <div><span class="spec">Body · 29 px · 400 · −0,4 %</span><span class="sample" style="font-size:19px;font-weight:400;letter-spacing:-0.004em">Bloque 2: IA Workflow · 18:00 – 19:30</span></div>
+    </div>
+    <p class="note">Muestras a ~60&nbsp;% de su tamaño en la tele. Los números grandes de los widgets (temperatura, día del mes) van a 108&nbsp;px en peso fino: son cifras, no texto.</p>
+  </section>
+
+  <section aria-labelledby="contrast">
+    <h2 id="contrast">Color y contraste (mínimo 4,5:1)</h2>
+    <p class="note">Colores semánticos de iOS. Donde el original no llega a 4,5:1 (el gris secundario al 60&nbsp;% y el rojo del sistema sobre blanco) se usa la variante de alto contraste del propio iOS. Ratios calculados aquí mismo con la fórmula WCAG.</p>
+    <div class="scroll"><table id="ctable"><tr><th>Texto</th><th>Sobre</th><th>Ratio</th><th></th></tr></table></div>
+  </section>
+
+  <section aria-labelledby="focus">
+    <h2 id="focus">Foco y movimiento</h2>
+    <div class="cols">
+      <div class="scroll"><table>
+        <tr><th>Qué</th><th>Valor</th><th>Muelle</th></tr>
+        <tr><td>Zoom del foco</td><td class="num">× 1,08</td><td class="num">0,34 · 0,90</td></tr>
+        <tr><td>Sombra elevada</td><td class="num">0 34 60 · 38 %</td><td class="num">el mismo</td></tr>
+        <tr><td>Filo y brillo</td><td class="num">1,5 px blanco 55 % · diagonal 42 %</td><td class="num">el mismo</td></tr>
+        <tr><td>El resto</td><td class="num">opacidad 80 %</td><td class="num">0,24 · 1,0</td></tr>
+        <tr><td>Desplazar filas y cajón</td><td class="num">—</td><td class="num">0,28 · 1,0</td></tr>
+      </table></div>
+      <div><canvas id="springs" aria-label="Curvas de los tres muelles"></canvas><div class="legend" id="legend"></div></div>
+    </div>
+    <p class="note">Muelle: response (s) · damping, integrado igual que <code>Spring.java</code>. Durante el movimiento solo cambian escalas y opacidades de capas ya dibujadas; cuando todo para, la app deja de pedir fotogramas.</p>
+  </section>
+
+  <section aria-labelledby="map">
+    <h2 id="map">Dónde se aplica</h2>
+    <div class="scroll"><table>
+      <tr><th>Parte</th><th>Cambia a</th></tr>
+      <tr><td>Pantalla de inicio</td><td>Fondo de manchas por hora y modo automático; fecha y saludo en Headline y Title 1.</td></tr>
+      <tr><td>Estante de apps</td><td>Dock de cristal fino con tus 5 favoritas en squircle, sin nombres salvo la que tiene el foco; cuadrícula de apps con nombre debajo.</td></tr>
+      <tr><td>Cajón de clima</td><td>Widgets de reloj, tiempo y agenda con caras de iOS, pequeños y medianos.</td></tr>
+      <tr><td>Ajustes</td><td>Paneles de cristal normal, filas con el mismo foco, textos en los tres estilos.</td></tr>
+      <tr><td>Sin cambios</td><td>El modo <em>Original</em> y el watchdog que vuelve al launcher de la tele.</td></tr>
+    </table></div>
+  </section>
+</div>
+
+<script type="application/json" id="tokens">
+{
+  "space": { "unit": "px in the 1920x1080 space", "dp": 2, "safeX": 96, "safeY": 54, "grid": 8 },
+  "radius": { "icon": "22% continuous (superellipse n=5)", "widget": 56, "dock": 64 },
+  "type": {
+    "fonts": ["custom_font (SF Pro if you have it)", "Inter"],
+    "title1": { "size": 76, "weight": 600, "tracking": -0.012 },
+    "headline": { "size": 38, "weight": 600, "tracking": -0.008 },
+    "body": { "size": 29, "weight": 400, "tracking": -0.004 },
+    "figures": { "size": 108, "weight": 300, "tracking": -0.02, "tabular": true }
+  },
+  "color": {
+    "light": { "label": "#000000", "label2": "#CC3C3C43", "widget": "#FFFFFF", "red": "#D70015" },
+    "dark": { "label": "#FFFFFF", "label2": "#99EBEBF5", "widget": "#1C1C1E", "red": "#FF453A" },
+    "weatherSky": { "day": ["#2F6FD0", "#1F55B0"], "night": ["#1F3366", "#0E1A38"] },
+    "events": ["#5E5CE6", "#30B0C7", "#FF9F0A"]
+  },
+  "material": {
+    "blur": 40, "saturation": 1.8,
+    "thin": { "light": "#4DFFFFFF", "dark": "#5728282E" },
+    "regular": { "light": "#B8FFFFFF", "dark": "#B31E1E22" },
+    "edge": { "light": "#33FFFFFF", "dark": "#29FFFFFF" },
+    "specular": { "line": "#59FFFFFF", "top": "#38FFFFFF", "to": 0.42 }
+  },
+  "wallpaper": {
+    "dawn":  { "light": { "base": "#FCE9E1", "blobs": [["#FFB199", 18, 22, 55], ["#C9B6FF", 78, 18, 50], ["#9EC9FF", 60, 92, 60]] },
+               "dark":  { "base": "#1B1428", "blobs": [["#6A3A64", 20, 20, 55], ["#3A2E6E", 80, 25, 50], ["#5B2A3A", 55, 95, 60]] } },
+    "day":   { "light": { "base": "#EAF2FF", "blobs": [["#9CC8FF", 15, 15, 55], ["#B9F0E6", 85, 30, 50], ["#D9CCFF", 50, 100, 60]] },
+               "dark":  { "base": "#0B1424", "blobs": [["#1E3A6E", 18, 18, 55], ["#0F4A55", 85, 30, 50], ["#2A2860", 50, 100, 60]] } },
+    "dusk":  { "light": { "base": "#FFEDE3", "blobs": [["#FFAE7A", 20, 25, 55], ["#F48FB1", 80, 20, 50], ["#B39DFF", 60, 100, 60]] },
+               "dark":  { "base": "#1C1020", "blobs": [["#7A3424", 18, 25, 55], ["#6B2148", 82, 18, 50], ["#3B2A70", 55, 100, 60]] } },
+    "night": { "light": { "base": "#E6E6F5", "blobs": [["#B8C0F0", 20, 20, 55], ["#D0C2F2", 80, 25, 50], ["#AFC7EE", 55, 100, 60]] },
+               "dark":  { "base": "#05070F", "blobs": [["#18245A", 20, 15, 55], ["#2A1A50", 80, 30, 50], ["#0E2A4A", 50, 100, 60]] } }
+  },
+  "widget": { "small": [336, 336], "medium": [712, 336], "padding": [30, 34] },
+  "icon": { "grid": 150, "gridGap": 66, "dock": 132, "dockGap": 36, "label": 29 },
+  "focus": { "scale": 1.08, "shadow": [0, 34, 60, 0.38], "rim": [1.5, "#8CFFFFFF"], "sheen": 0.42, "dim": 0.8 },
+  "spring": { "focus": { "response": 0.34, "damping": 0.9 }, "dim": { "response": 0.24, "damping": 1.0 }, "move": { "response": 0.28, "damping": 1.0 } }
+}
+</script>
+
+<script>
+(function () {
+  var T = JSON.parse(document.getElementById("tokens").textContent);
+  var tv = document.getElementById("tv"), box = document.getElementById("tvbox"), wall = document.getElementById("wall");
+  function fit() { tv.style.transform = "scale(" + (box.clientWidth / 1920) + ")"; }
+  window.addEventListener("resize", fit); fit();
+
+  // Continuous-corner squircle (superellipse, n = 5) as an SVG mask.
+  (function () {
+    var pts = [];
+    for (var i = 0; i < 120; i++) {
+      var a = i / 120 * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+      pts.push((50 + 50 * Math.sign(c) * Math.pow(Math.abs(c), 0.4)).toFixed(2) + "," + (50 + 50 * Math.sign(s) * Math.pow(Math.abs(s), 0.4)).toFixed(2));
+    }
+    var svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><polygon points='" + pts.join(" ") + "'/></svg>";
+    tv.style.setProperty("--sq", "url(\"data:image/svg+xml;utf8," + encodeURIComponent(svg) + "\")");
+  })();
+
+  // Generic apps (no brands): two colours and a simple line glyph each.
+  var G = {
+    play: "<path d='M8.5 5.5v13l10.5-6.5z' fill='#fff'/>",
+    film: "<rect x='3' y='5' width='18' height='14' rx='3' fill='none' stroke='#fff' stroke-width='2'/><path d='M3 9.5h18M3 14.5h18M8 5v14M16 5v14' stroke='#fff' stroke-width='1.6'/>",
+    music: "<path d='M9 17V6.5l10-2.2V15' fill='none' stroke='#fff' stroke-width='2' stroke-linejoin='round'/><circle cx='7' cy='17' r='2.6' fill='#fff'/><circle cx='17' cy='15' r='2.6' fill='#fff'/>",
+    ball: "<circle cx='12' cy='12' r='8.5' fill='none' stroke='#fff' stroke-width='2'/><path d='M12 3.5v17M3.5 12h17' stroke='#fff' stroke-width='1.6'/>",
+    news: "<rect x='4' y='4.5' width='16' height='15' rx='3' fill='none' stroke='#fff' stroke-width='2'/><path d='M7.5 9h9M7.5 12h9M7.5 15h5.5' stroke='#fff' stroke-width='1.7' stroke-linecap='round'/>",
+    photo: "<path d='M12 4.5c1.8 2.4 1.8 4.6 0 7-1.8-2.4-1.8-4.6 0-7zM12 19.5c-1.8-2.4-1.8-4.6 0-7 1.8 2.4 1.8 4.6 0 7zM4.5 12c2.4-1.8 4.6-1.8 7 0-2.4 1.8-4.6 1.8-7 0zM19.5 12c-2.4 1.8-4.6 1.8-7 0 2.4-1.8 4.6-1.8 7 0z' fill='#fff' opacity='.95'/>",
+    game: "<rect x='3' y='8' width='18' height='9' rx='4.5' fill='none' stroke='#fff' stroke-width='2'/><path d='M8 10.5v4M6 12.5h4' stroke='#fff' stroke-width='1.8' stroke-linecap='round'/><circle cx='16' cy='11.5' r='1.2' fill='#fff'/><circle cx='18' cy='13.8' r='1.2' fill='#fff'/>",
+    gear: "<circle cx='12' cy='12' r='3.2' fill='none' stroke='#fff' stroke-width='2'/><path d='M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1' stroke='#fff' stroke-width='2' stroke-linecap='round'/>",
+    tv: "<rect x='3' y='5' width='18' height='12' rx='2.5' fill='none' stroke='#fff' stroke-width='2'/><path d='M9 20h6' stroke='#fff' stroke-width='2' stroke-linecap='round'/>",
+    mic: "<rect x='9' y='3.5' width='6' height='11' rx='3' fill='#fff'/><path d='M6 11.5a6 6 0 0012 0M12 17.5v3' fill='none' stroke='#fff' stroke-width='2' stroke-linecap='round'/>"
+  };
+  function app(name, glyph, a, b, row) {
+    return "<div class='app focusable' data-row='" + row + "'><div class='icon lift'><span class='sheen'></span><div class='shape' style='background:linear-gradient(180deg," + a + "," + b + ")'>" +
+      "<svg viewBox='0 0 24 24' aria-hidden='true'>" + G[glyph] + "</svg></div></div><div class='name'>" + name + "</div></div>";
+  }
+  var grid = [["Cine", "film", "#5E8BFF", "#2F55D4"], ["Fotos", "photo", "#FFB340", "#FF6A3D"], ["Noticias", "news", "#FF5C6C", "#D92A47"],
+              ["Juegos", "game", "#45D483", "#1F9E5A"], ["Directo", "tv", "#A78BFA", "#6D4AE0"], ["Voz", "mic", "#5AC8FA", "#2196D9"], ["Ajustes", "gear", "#A3A9B8", "#6C7385"]];
+  var dock = [["Vídeos", "play", "#FF5A5A", "#D41F2E"], ["Películas", "film", "#4C8DFF", "#1E56D6"], ["Música", "music", "#FF4D88", "#D61A5B"],
+              ["Series", "tv", "#9B7BFF", "#5C3BD9"], ["Deportes", "ball", "#34C77B", "#178A50"]];
+  document.getElementById("grid").innerHTML = grid.map(function (a) { return app(a[0], a[1], a[2], a[3], 1); }).join("");
+  document.getElementById("dock").innerHTML = dock.map(function (a) { return app(a[0], a[1], a[2], a[3], 2); }).join("");
+
+  // Analog clock face (iOS clock widget): numerals, ticks, hour and minute hands, orange second hand.
+  var dial = document.getElementById("dial");
+  function drawDial(now) {
+    var ink = getComputedStyle(tv).getPropertyValue("--dial-ink").trim(), s = "";
+    for (var i = 0; i < 60; i++) {
+      var a = i / 60 * Math.PI * 2, big = i % 5 === 0, r1 = big ? 126 : 132, r2 = 140;
+      s += "<line x1='" + (Math.sin(a) * r1).toFixed(1) + "' y1='" + (-Math.cos(a) * r1).toFixed(1) + "' x2='" + (Math.sin(a) * r2).toFixed(1) + "' y2='" + (-Math.cos(a) * r2).toFixed(1) +
+           "' stroke='" + ink + "' stroke-opacity='" + (big ? 0.9 : 0.35) + "' stroke-width='" + (big ? 4 : 2) + "' stroke-linecap='round'/>";
+    }
+    for (var n = 1; n <= 12; n++) {
+      var b = n / 12 * Math.PI * 2;
+      s += "<text x='" + (Math.sin(b) * 100).toFixed(1) + "' y='" + (-Math.cos(b) * 100 + 11).toFixed(1) + "' text-anchor='middle' font-size='32' font-weight='500' fill='" + ink + "' font-family='" + getComputedStyle(tv).fontFamily.replace(/'/g, "") + "'>" + n + "</text>";
+    }
+    var h = now.getHours() % 12 + now.getMinutes() / 60, m = now.getMinutes() + now.getSeconds() / 60, sec = now.getSeconds();
+    function hand(angle, len, w, col, tail) { var a = angle * Math.PI * 2; return "<line x1='" + (-Math.sin(a) * tail).toFixed(1) + "' y1='" + (Math.cos(a) * tail).toFixed(1) + "' x2='" + (Math.sin(a) * len).toFixed(1) + "' y2='" + (-Math.cos(a) * len).toFixed(1) + "' stroke='" + col + "' stroke-width='" + w + "' stroke-linecap='round'/>"; }
+    s += hand(h / 12, 70, 9, ink, 0) + hand(m / 60, 112, 7, ink, 0) + hand(sec / 60, 124, 3, "#FF9500", 22);
+    s += "<circle r='7' fill='#FF9500'/><circle r='3' fill='" + getComputedStyle(tv).getPropertyValue("--dial").trim() + "'/>";
+    dial.innerHTML = s;
+  }
+
+  // Wallpapers and mode by time of day.
+  function wallCss(w) {
+    return w.blobs.map(function (b) { return "radial-gradient(circle at " + b[1] + "% " + b[2] + "%, " + b[0] + " 0%, " + b[0] + "00 " + b[3] + "%)"; }).join(",") + "," + w.base;
+  }
+  var timeSel = "auto", modeSel = "auto";
+  function moment(h) { return h >= 6 && h < 9 ? "dawn" : h >= 9 && h < 18 ? "day" : h >= 18 && h < 21 ? "dusk" : "night"; }
+  function apply() {
+    var now = new Date(), h = now.getHours(), m = timeSel === "auto" ? moment(h) : timeSel;
+    var auto = m === "night" || (m === "dusk" && (timeSel !== "auto" ? false : h >= 20)) ? "dark" : "light";
+    if (timeSel !== "auto") auto = m === "night" ? "dark" : "light";
+    var mode = modeSel === "auto" ? auto : modeSel;
+    tv.dataset.mode = mode;
+    wall.style.background = wallCss(T.wallpaper[m][mode]);
+    var sky = T.color.weatherSky[mode === "dark" || m === "night" ? "night" : "day"];
+    document.getElementById("weather").style.background = "linear-gradient(180deg," + sky[0] + "," + sky[1] + ")";
+    document.getElementById("greeting").textContent = (h >= 6 && h < 13 ? "Buenos días" : h >= 13 && h < 21 ? "Buenas tardes" : "Buenas noches") + ", Edu";
+    var d = now.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
+    document.getElementById("date").textContent = d.charAt(0).toUpperCase() + d.slice(1);
+    document.getElementById("wday").textContent = now.toLocaleDateString("es-ES", { weekday: "long" });
+    document.getElementById("mday").textContent = now.getDate();
+    drawDial(now);
+  }
+  function seg(id, cb) {
+    var el = document.getElementById(id);
+    el.addEventListener("click", function (e) {
+      var b = e.target.closest("button"); if (!b) return;
+      if (id === "safe") { var on = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", on); cb(on); return; }
+      el.querySelectorAll("button").forEach(function (x) { x.setAttribute("aria-pressed", x === b); });
+      cb(b.dataset.v);
+    });
+  }
+  seg("time", function (v) { timeSel = v; apply(); });
+  seg("mode", function (v) { modeSel = v; apply(); });
+  seg("safe", function (on) { tv.classList.toggle("show-safe", on); });
+  apply(); setInterval(apply, 1000);
+
+  // D-pad focus over three rows: widgets, grid, dock.
+  var rows = [0, 1, 2].map(function (r) { return Array.prototype.slice.call(tv.querySelectorAll(".focusable[data-row='" + r + "']")); });
+  var fr = 2, fi = 0;
+  function cx(el) { var r = el.getBoundingClientRect(); return r.left + r.width / 2; }
+  function focusAt(r, i) {
+    tv.querySelectorAll(".is-focus").forEach(function (x) { x.classList.remove("is-focus"); });
+    fr = r; fi = Math.max(0, Math.min(rows[r].length - 1, i));
+    rows[fr][fi].classList.add("is-focus"); tv.classList.add("has-focus");
+  }
+  tv.addEventListener("keydown", function (e) {
+    var k = e.key; if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].indexOf(k) < 0) return;
+    e.preventDefault();
+    if (k === "ArrowLeft") return focusAt(fr, fi - 1);
+    if (k === "ArrowRight") return focusAt(fr, fi + 1);
+    var nr = Math.max(0, Math.min(2, fr + (k === "ArrowUp" ? -1 : 1))); if (nr === fr) return;
+    var x = cx(rows[fr][fi]), best = 0, bd = Infinity;
+    rows[nr].forEach(function (el, i) { var d = Math.abs(cx(el) - x); if (d < bd) { bd = d; best = i; } });
+    focusAt(nr, best);
+  });
+  focusAt(2, 0);
+
+  // Wallpaper swatches.
+  var names = { dawn: "Amanecer", day: "Día", dusk: "Atardecer", night: "Noche" };
+  document.getElementById("wallsw").innerHTML = ["dawn", "day", "dusk", "night"].map(function (m) {
+    return ["light", "dark"].map(function (md) {
+      return "<div class='wsw' style='background:" + wallCss(T.wallpaper[m][md]) + ";color:" + (md === "light" ? "#000" : "#fff") + "'>" + names[m] + " · " + (md === "light" ? "claro" : "oscuro") + "</div>";
+    }).join("");
+  }).join("");
+
+  // Contrast, WCAG.
+  function hex(h) { h = h.replace("#", ""); return [0, 2, 4].map(function (i) { return parseInt(h.substr(i, 2), 16); }); }
+  function argb(h) { h = h.replace("#", ""); return { a: parseInt(h.substr(0, 2), 16) / 255, c: hex(h.substr(2)) }; }
+  function over(t, b) { return t.c.map(function (v, i) { return v * t.a + b[i] * (1 - t.a); }); }
+  function lum(c) { return c.map(function (v) { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); }).reduce(function (s, v, i) { return s + v * [0.2126, 0.7152, 0.0722][i]; }, 0); }
+  function ratio(a, b) { var x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); }
+  function color(c, bg) { return c.length === 9 ? over(argb(c), bg) : hex(c); }
+  var rowsHtml = [];
+  function row(label, fg, bgHex, bgName) {
+    var bg = hex(bgHex), f = color(fg, bg), r = ratio(f, bg);
+    rowsHtml.push("<tr><td><span class='chip' style='background:rgb(" + f.map(Math.round).join(",") + ")'></span>" + label + "</td><td><span class='chip' style='background:" + bgHex + "'></span>" + bgName +
+      "</td><td class='num'>" + r.toFixed(2) + ":1</td><td class='" + (r >= 4.5 ? "pass'>Cumple" : "fail'>No cumple") + "</td></tr>");
+  }
+  ["light", "dark"].forEach(function (md) {
+    var c = T.color[md], tag = md === "light" ? " (claro)" : " (oscuro)";
+    row("Texto principal" + tag, c.label, c.widget, "widget");
+    row("Texto secundario" + tag, c.label2, c.widget, "widget");
+    row("Día de la semana" + tag, c.red, c.widget, "widget");
+    // Names on the wallpaper: against each wallpaper's lightest (or darkest) colour.
+    var worst = null, wr = Infinity;
+    Object.keys(T.wallpaper).forEach(function (m) {
+      var w = T.wallpaper[m][md]; [w.base].concat(w.blobs.map(function (b) { return b[0]; })).forEach(function (h) { var r = ratio(hex(c.label), hex(h)); if (r < wr) { wr = r; worst = h; } });
+    });
+    row("Nombres de apps" + tag, c.label, worst, "fondo, el peor caso");
+    var panel = over(argb(T.material.regular[md]), hex(worst));
+    var ph = "#" + panel.map(function (v) { return ("0" + Math.round(v).toString(16)).slice(-2); }).join("");
+    row("Texto secundario en cristal" + tag, c.label2, ph, "cristal normal sobre el peor fondo");
+  });
+  ["day", "night"].forEach(function (k) { T.color.weatherSky[k].forEach(function (s, i) { row("Blanco en el widget del tiempo", "#FFFFFF", s, (k === "day" ? "cielo de día " : "cielo de noche ") + (i ? "abajo" : "arriba")); }); });
+  document.getElementById("ctable").insertAdjacentHTML("beforeend", rowsHtml.join(""));
+
+  // Springs, integrated like Spring.java (4 ms steps); time to settle within 1%.
+  var cv = document.getElementById("springs"), g = cv.getContext("2d"), css = getComputedStyle(document.documentElement);
+  var curves = [["focus", "Foco", "#2F6FD0"], ["dim", "Atenuar", "#22A06B"], ["move", "Desplazar", "#E0702B"]];
+  function run(s) {
+    var w = 2 * Math.PI / s.response, k = w * w, c = 2 * s.damping * w, v = 0, x = 0, t = 0, pts = [], settle = 0;
+    while (t < 0.6) { var a = -k * (x - 1) - c * v; v += a * 0.004; x += v * 0.004; t += 0.004; pts.push([t, x]); if (Math.abs(x - 1) > 0.01) settle = t; }
+    return { pts: pts, settle: Math.round(settle * 1000) };
+  }
+  function draw() {
+    var W = cv.clientWidth, H = cv.clientHeight, dpr = window.devicePixelRatio || 1;
+    cv.width = W * dpr; cv.height = H * dpr; g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    var ink2 = css.getPropertyValue("--ink-2").trim(), rule = css.getPropertyValue("--rule").trim();
+    var L = 38, R = W - 12, Tp = 14, B = H - 28;
+    function X(t) { return L + t / 0.6 * (R - L); } function Y(v) { return B - v / 1.1 * (B - Tp); }
+    g.strokeStyle = rule; g.lineWidth = 1; g.font = "11px " + css.getPropertyValue("--font"); g.fillStyle = ink2;
+    [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6].forEach(function (t) { g.beginPath(); g.moveTo(X(t), Tp); g.lineTo(X(t), B); g.stroke(); g.fillText(Math.round(t * 1000) + " ms", X(t) - 14, H - 10); });
+    [0, 0.5, 1].forEach(function (v) { g.beginPath(); g.moveTo(L, Y(v)); g.lineTo(R, Y(v)); g.stroke(); g.fillText(v.toFixed(1), 8, Y(v) + 4); });
+    g.fillStyle = "rgba(47,111,208,.10)"; g.fillRect(X(0.25), Tp, X(0.35) - X(0.25), B - Tp);
+    var legend = [];
+    curves.forEach(function (d) {
+      var r = run(T.spring[d[0]]); g.strokeStyle = d[2]; g.lineWidth = 2.5; g.beginPath();
+      r.pts.forEach(function (p, i) { if (i) g.lineTo(X(p[0]), Y(p[1])); else g.moveTo(X(p[0]), Y(p[1])); }); g.stroke();
+      legend.push("<span><i style='background:" + d[2] + "'></i>" + d[1] + ": " + r.settle + " ms</span>");
+    });
+    document.getElementById("legend").innerHTML = legend.join("") + "<span>Franja: 250–350 ms</span>";
+  }
+  draw(); window.addEventListener("resize", draw);
+})();
+</script>

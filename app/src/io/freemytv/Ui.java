@@ -62,12 +62,16 @@ final class Ui {
         semibold = font(a, 14, 600);
     }
 
-    /** Inter at an optical size (14 = text, 32 = display) and weight; the system font if the file is missing. */
+    /**
+     * Your own font (custom_font in config.properties), else Inter, at an optical size (14 = text, 32 = display) and
+     * weight; the system font if neither file is there. A variable font takes both axes; a static one, its own weight.
+     */
     private static Typeface font(AssetManager a, int opticalSize, int weight) {
-        if (has(a, FONT)) {
+        for (String file : new String[] {CUSTOM_FONT, FONT}) {
+            if (!has(a, file)) continue;
             try {
-                Typeface t = new Typeface.Builder(a, FONT)
-                        .setFontVariationSettings("'opsz' " + opticalSize + ", 'wght' " + weight).build();
+                Typeface t = new Typeface.Builder(a, file)
+                        .setFontVariationSettings("'opsz' " + opticalSize + ", 'wght' " + weight).setWeight(weight).build();
                 if (t != null) return t;
             } catch (RuntimeException ignored) {
             }
@@ -84,7 +88,7 @@ final class Ui {
         }
     }
 
-    private static final String FONT = "fonts/InterVariable.ttf";
+    private static final String FONT = "fonts/InterVariable.ttf", CUSTOM_FONT = "fonts/custom.ttf";
 
     // MARK: - Text in the viewer's language
 

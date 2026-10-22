@@ -63,6 +63,7 @@ final class Config {
     static final String HIDE_SERVICES = "$(prop hide_services '')";
     static final String CALENDAR_ICS = "$(prop calendar_ics '')";
     static final String USER_NAME = "$(prop user_name '')";
+    static final String INPUT_NAMES = "$(prop input_names '')";
     static final String YOUTUBE_CLIENT_ID = "$(prop youtube_client_id '')";
     static final String YOUTUBE_CLIENT_SECRET = "$(prop youtube_client_secret '')";
     static final boolean DISABLE_ASSISTANT = $ASSIST;

@@ -298,6 +298,8 @@ final class HomeApps {
                 custom = info.loadCustomLabel(c);
             } catch (RuntimeException ignored) {
             }
+            String own = inputName(number);   // input_names in config.properties wins over the TV's own name
+            if (!own.isEmpty()) custom = own;
             String reported = devices.containsKey(info.getId()) ? devices.get(info.getId()) : "";
             String label = custom != null && custom.length() > 0 ? custom.toString()
                     : !reported.isEmpty() && state == TvInputManager.INPUT_STATE_CONNECTED ? reported : "HDMI " + number;
@@ -311,6 +313,15 @@ final class HomeApps {
         }
         Collections.sort(out, (a, b) -> a.number.compareTo(b.number));
         return out;
+    }
+
+    /** The name given to HDMI `number` in input_names ("1=PS4, 2=Apple TV"), or "". */
+    private static String inputName(int number) {
+        for (String pair : Config.INPUT_NAMES.split(",")) {
+            int eq = pair.indexOf('=');
+            if (eq > 0 && pair.substring(0, eq).trim().equals(String.valueOf(number))) return pair.substring(eq + 1).trim();
+        }
+        return "";
     }
 
     /** Words in a device's name, by the icon they pick: a game console, a streaming box, a sound system, a TV box. */

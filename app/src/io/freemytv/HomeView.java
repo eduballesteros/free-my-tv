@@ -2119,21 +2119,108 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     // MARK: - "All Apps" sheet
 
+    // MARK: - App Library (All Apps, Glass)
+    // Folders by category, four to a row, as on iOS: three apps large and, in the fourth place, the rest small (that
+    // opens the folder's full grid). Every place the focus can be is a slot: an app, or a folder's "more". Sizes are in
+    // the 1920x1080 space; scroll is in it too.
+
+    private static final float LIB_FOLDER = 320, LIB_GAP = 64, LIB_PAD = 28, LIB_CELL_GAP = 24, LIB_ROW = 386, LIB_TOP = 200;
+
+    private static final class Slot {
+        HomeApps.Item app;                  // null: a folder's "more"
+        int folder;
+        final RectF base = new RectF();     // where it sits, unscrolled
+        String label = "";
+    }
+
+    private static final class Folder {
+        String name;
+        final List<HomeApps.Item> apps = new ArrayList<>();
+        final RectF base = new RectF();
+    }
+
+    private final List<Folder> folders = new ArrayList<>();
+    private final List<Slot> slots = new ArrayList<>();
+    private int openFolder = -1;    // -1: the library; else that folder's full grid
+    private int libraryReturn;      // the slot to come back to when the folder closes
+    private final RectF slotRect = new RectF();
+
     private void setOthers(List<HomeApps.Item> list) {
         others = list;
-        gridFocus = new Spring[list.size()];
+        rebuildSlots();
+    }
+
+    /** The folders (Suggestions from the apps used last, then each category with apps) and the slots on screen. */
+    private void rebuildSlots() {
+        folders.clear();
+        slots.clear();
+        List<HomeApps.Item> all = new ArrayList<>(shelf);
+        all.addAll(others);
+        Folder suggestions = new Folder();
+        suggestions.name = Ui.tr("Suggestions");
+        for (Recent.App a : recentList) {
+            for (HomeApps.Item it : all) {
+                if (a.pkg.equals(it.pkg) && it.icon != null) {
+                    suggestions.apps.add(it);
+                    break;
+                }
+            }
+        }
+        if (!suggestions.apps.isEmpty()) folders.add(suggestions);
+        for (int cat = 0; cat < HomeApps.CATEGORIES; cat++) {
+            Folder f = new Folder();
+            f.name = HomeApps.categoryName(cat);
+            for (HomeApps.Item it : all) if (it.category == cat && it.icon != null) f.apps.add(it);
+            if (!f.apps.isEmpty()) folders.add(f);
+        }
+        if (openFolder >= folders.size()) openFolder = -1;
+        if (openFolder < 0) {
+            float width = 4 * LIB_FOLDER + 3 * LIB_GAP, left = (1920 - width) / 2;
+            float cell = (LIB_FOLDER - 2 * LIB_PAD - LIB_CELL_GAP) / 2;
+            for (int fi = 0; fi < folders.size(); fi++) {
+                Folder f = folders.get(fi);
+                float x = left + (fi % 4) * (LIB_FOLDER + LIB_GAP), y = LIB_TOP + (fi / 4) * LIB_ROW;
+                f.base.set(x, y, x + LIB_FOLDER, y + LIB_FOLDER);
+                boolean more = f.apps.size() > 4;
+                int big = more ? 3 : f.apps.size();
+                for (int j = 0; j < big; j++) {
+                    HomeApps.Item it = f.apps.get(j);
+                    addSlot(it, fi, x + LIB_PAD + (j % 2) * (cell + LIB_CELL_GAP), y + LIB_PAD + (j / 2) * (cell + LIB_CELL_GAP), cell, it.label);
+                }
+                if (more) addSlot(null, fi, x + LIB_PAD + cell + LIB_CELL_GAP, y + LIB_PAD + cell + LIB_CELL_GAP, cell,
+                        Ui.trf("More in {folder}", "folder", f.name));
+            }
+        } else {
+            Folder f = folders.get(openFolder);
+            float gridWidth = COLUMNS * GRID_W + (COLUMNS - 1) * GRID_GAP, left = (1920 - gridWidth) / 2;
+            for (int j = 0; j < f.apps.size(); j++) {
+                HomeApps.Item it = f.apps.get(j);
+                addSlot(it, openFolder, left + (j % COLUMNS) * (GRID_W + GRID_GAP), GRID_TOP + (j / COLUMNS) * GRID_ROW, GRID_W, it.label);
+            }
+        }
+        gridFocus = new Spring[slots.size()];
         for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = Theme.focus();
         gridLabels = null;
-        gridIndex = Math.min(gridIndex, Math.max(0, list.size() - 1));
+        gridIndex = Math.min(gridIndex, Math.max(0, slots.size() - 1));
         retargetGrid(true);
         gridDirty = true;
     }
 
+    private void addSlot(HomeApps.Item app, int folder, float x, float y, float size, String label) {
+        Slot s = new Slot();
+        s.app = app;
+        s.folder = folder;
+        s.base.set(x, y, x + size, y + size);
+        s.label = label == null ? "" : label;
+        slots.add(s);
+    }
+
     private void openSheet() {
         sheetOpen = true;
+        openFolder = -1;
         gridIndex = 0;
         scroll.snap(0);
-        retargetGrid(true);
+        rebuildSlots();
         retarget(false);
         sheet.target = 1;
         gridDirty = true;
@@ -2145,54 +2232,111 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         retarget(false);
     }
 
+    /** A folder's "more": its full grid; Back brings the library back. */
+    private void openFolder(int folder) {
+        libraryReturn = gridIndex;
+        openFolder = folder;
+        gridIndex = 0;
+        scroll.target = 0;
+        scroll.snap(0);
+        rebuildSlots();
+    }
+
     private void retargetGrid(boolean snap) {
         for (int i = 0; i < gridFocus.length; i++) {
             gridFocus[i].target = sheetOpen && i == gridIndex ? 1 : 0;
             if (snap) gridFocus[i].snap(gridFocus[i].target);
         }
-        int rows = Math.max(1, (others.size() + COLUMNS - 1) / COLUMNS);
-        int visible = Math.min(rows, VISIBLE_ROWS);
-        int r = gridIndex / COLUMNS;
-        float target = scroll.target;
-        if (r < target) target = r;
-        else if (r > target + visible - 1) target = r - visible + 1;
-        scroll.target = Math.max(0, Math.min(rows - visible, target));
-        if (snap) scroll.snap(scroll.target);
+        // Scroll so the focused slot's folder (or, in a folder, the slot and its name) shows whole.
+        if (gridIndex < slots.size()) {
+            Slot s = slots.get(gridIndex);
+            RectF b = openFolder < 0 && s.folder < folders.size() ? folders.get(s.folder).base : s.base;
+            float target = scroll.target;
+            if (b.top - target < LIB_TOP) target = b.top - LIB_TOP;
+            if (b.bottom + 70 - target > 1080 - Theme.SAFE_Y) target = b.bottom + 70 - (1080 - Theme.SAFE_Y);
+            scroll.target = Math.max(0, target);
+            if (snap) scroll.snap(scroll.target);
+        }
         spoken.focusMoved();
     }
 
     private void drawSheet(Canvas c) {
         // The regular material over the wallpaper (already soft: no blur needed on top), the title in Title 1.
         c.drawColor(tone(Theme.REGULAR, Theme.REGULAR_DARK));
-        float shift = scroll.value * GRID_ROW * k;
+        float shift = scroll.value * k;
         sheetTitle.setTextSize(Theme.TITLE * k);
         sheetTitle.setLetterSpacing(Theme.TITLE_TRACK);
         sheetTitle.setColor(tone(Theme.LABEL, Theme.LABEL_DARK));
-        c.drawText(Ui.tr("All Apps"), w / 2f, 140 * k - shift, sheetTitle);
+        String title = openFolder >= 0 && openFolder < folders.size() ? folders.get(openFolder).name : Ui.tr("App Library");
+        c.drawText(title, w / 2f, 140 * k - shift, sheetTitle);
         gridLabel.setTextSize(Theme.BODY * k);
-        int n = others.size();
+        int n = slots.size();
         if (gridLabels == null || gridLabels.length != n) {
             gridLabels = new String[n];
             for (int i = 0; i < n; i++) {
-                gridLabels[i] = TextUtils.ellipsize(others.get(i).label, gridLabel, (GRID_W + GRID_GAP - 12) * k, TextUtils.TruncateAt.END).toString();
+                gridLabels[i] = TextUtils.ellipsize(slots.get(i).label, gridLabel, (GRID_W + GRID_GAP - 12) * k, TextUtils.TruncateAt.END).toString();
             }
         }
-        float gridWidth = COLUMNS * GRID_W + (COLUMNS - 1) * GRID_GAP;
-        float left = (1920 - gridWidth) / 2 * k;
-        float gridTop = GRID_TOP * k;
+        int ink = tone(Theme.LABEL, Theme.LABEL_DARK);
+        if (openFolder < 0) {
+            // The folders: a translucent rounded square each, its name under it.
+            for (Folder f : folders) {
+                slotRect.set(f.base.left * k, f.base.top * k - shift, f.base.right * k, f.base.bottom * k - shift);
+                if (slotRect.top > h || slotRect.bottom + 60 * k < 0) continue;
+                float r = slotRect.width() * Theme.ICON_RADIUS;
+                fill.setShader(null);
+                fill.setColor(tone(0x14000000, 0x1FFFFFFF));
+                c.drawRoundRect(slotRect, r, r, fill);
+                border.setStyle(Paint.Style.STROKE);
+                border.setStrokeWidth(Math.max(1, k));
+                border.setColor(tone(0x0F000000, Theme.EDGE_DARK));
+                c.drawRoundRect(slotRect, r, r, border);
+                gridLabel.setColor(ink);
+                c.drawText(f.name, slotRect.centerX(), slotRect.bottom + 46 * k, gridLabel);
+            }
+        }
         for (int i = 0; i < n; i++) {
-            int r = i / COLUMNS, col = i % COLUMNS;
-            float y = gridTop + r * GRID_ROW * k - shift;
-            if (y > h || y + GRID_ROW * k < 0) continue;
-            float x = left + col * (GRID_W + GRID_GAP) * k;
-            gridCell.set(x, y, x + GRID_W * k, y + GRID_H * k);
+            Slot s = slots.get(i);
+            slotRect.set(s.base.left * k, s.base.top * k - shift, s.base.right * k, s.base.bottom * k - shift);
+            if (slotRect.top > h || slotRect.bottom + 60 * k < 0) continue;
             float f = gridFocus[i].value, alpha = sheetOpen ? Theme.FOCUS_DIM + (1 - Theme.FOCUS_DIM) * Ui.clamp(f) : 1;
-            HomeApps.Item item = others.get(i);
-            if (item.icon != null) drawIcon(c, item.icon, gridCell, f, alpha);
-            else drawCard(c, item.tile, gridCell, GRID_RADIUS * k, f, Theme.FOCUS_SCALE - 1);
+            if (s.app == null) drawMore(c, folders.get(s.folder), slotRect, f, alpha);
+            else if (s.app.icon != null) drawIcon(c, s.app.icon, slotRect, f, alpha);
+            else drawCard(c, s.app.tile, slotRect, slotRect.width() * Theme.ICON_RADIUS, f, Theme.FOCUS_SCALE - 1);
             if (sheetOpen && i == gridIndex) focusedCell.set(cell);
-            gridLabel.setColor(Ui.alpha(tone(Theme.LABEL, Theme.LABEL_DARK), alpha));
-            c.drawText(gridLabels[i], gridCell.centerX(), gridCell.bottom + (44 + 8 * f) * k, gridLabel);
+            if (openFolder >= 0) {
+                gridLabel.setColor(Ui.alpha(ink, alpha));
+                c.drawText(gridLabels[i], slotRect.centerX(), slotRect.bottom + (44 + 8 * f) * k, gridLabel);
+            }
+        }
+    }
+
+    /** A folder's "more": its next four apps small, in the fourth place; focused, it grows with a rim like an icon. */
+    private void drawMore(Canvas c, Folder folder, RectF base, float f, float alpha) {
+        float fc = Ui.clamp(f), s = 1 + (Theme.FOCUS_SCALE - 1) * f;
+        float cx = base.centerX(), cy = base.centerY(), size = base.width() * s;
+        cell.set(cx - size / 2, cy - size / 2, cx + size / 2, cy + size / 2);
+        float gap = 12 * k * s, mini = (size - gap) / 2;
+        bitmapPaint.setAlpha(Math.round(255 * alpha));
+        for (int j = 0; j < 4 && 3 + j < folder.apps.size(); j++) {
+            Bitmap icon = folder.apps.get(3 + j).icon;
+            if (icon == null) continue;
+            float x = cell.left + (j % 2) * (mini + gap), y = cell.top + (j / 2) * (mini + gap);
+            tmp.set(x, y, x + mini, y + mini);
+            c.drawBitmap(icon, null, tmp, bitmapPaint);
+        }
+        bitmapPaint.setAlpha(255);
+        if (fc > 0.01f) {
+            float r = size * Theme.ICON_RADIUS;
+            fill.setShader(null);
+            fill.setColor(Ui.alpha(0xFFFFFFFF, 0.18f * fc));
+            c.drawRoundRect(cell, r, r, fill);
+            rim.setShader(null);
+            rim.setStyle(Paint.Style.STROKE);
+            rim.setColor(Ui.alpha(Theme.RIM_COLOR, fc));
+            rim.setStrokeWidth(Theme.RIM * k);
+            c.drawRoundRect(cell, r, r, rim);
+            rim.setStrokeWidth(2.5f * k);
         }
     }
 
@@ -2402,7 +2546,11 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void back() {
-        if (sheetOpen) {
+        if (sheetOpen && openFolder >= 0) {
+            openFolder = -1;
+            gridIndex = libraryReturn;
+            rebuildSlots();
+        } else if (sheetOpen) {
             closeSheet();
         } else if (zone == Z_DRAWER || zone == WIDGETS) {
             closeDrawer();
@@ -2515,19 +2663,23 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void moveGrid(int dx, int dy) {
-        int n = others.size();
-        if (n == 0) return;
-        int r = gridIndex / COLUMNS, col = gridIndex % COLUMNS;
-        int rows = (n + COLUMNS - 1) / COLUMNS;
-        int next = gridIndex;
-        if (dx != 0) {
-            int candidate = gridIndex + dx;
-            if (candidate >= 0 && candidate < n && candidate / COLUMNS == r) next = candidate;
-        } else {
-            int targetRow = r + dy;
-            if (targetRow >= 0 && targetRow < rows) next = Math.min(n - 1, targetRow * COLUMNS + col);
+        if (gridIndex >= slots.size()) return;
+        RectF cur = slots.get(gridIndex).base;
+        int next = -1;
+        float best = Float.MAX_VALUE;
+        for (int j = 0; j < slots.size(); j++) {
+            if (j == gridIndex) continue;
+            RectF b = slots.get(j).base;
+            float ddx = b.centerX() - cur.centerX(), ddy = b.centerY() - cur.centerY();
+            if (dx != 0 && ddx * dx <= 1) continue;
+            if (dy != 0 && ddy * dy <= 1) continue;
+            float score = dx != 0 ? Math.abs(ddx) + 2 * Math.abs(ddy) : Math.abs(ddy) + 2 * Math.abs(ddx);
+            if (score < best) {
+                best = score;
+                next = j;
+            }
         }
-        if (next == gridIndex) return;
+        if (next < 0) return;
         gridIndex = next;
         retargetGrid(false);
         click.move();
@@ -2544,8 +2696,14 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         RectF r;
         if (!sheetOpen && zone == WIDGETS) return;   // a widget is only read
         if (sheetOpen) {
-            if (others.isEmpty()) return;
-            it = others.get(gridIndex);
+            if (gridIndex >= slots.size()) return;
+            Slot s = slots.get(gridIndex);
+            if (s.app == null) {
+                click.open();
+                openFolder(s.folder);
+                return;
+            }
+            it = s.app;
             r = focusedCell;
         } else if (zone == Z_HERO) {
             Recs.Pick p = currentPick();
@@ -2790,7 +2948,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
 
     private void a11yItems(List<Integer> out) {
         if (sheetOpen) {
-            for (int i = 0; i < others.size(); i++) out.add(a11yId(GRID, i));
+            for (int i = 0; i < slots.size(); i++) out.add(a11yId(GRID, i));
             return;
         }
         for (int i = picksOn() ? 0 : TABS; i < TABS + lightButtons.size(); i++) out.add(a11yId(Z_TOP, i));
@@ -2805,8 +2963,8 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         int group = (id - 1) / 1000, i = (id - 1) % 1000;
         switch (group) {
             case GRID:
-                if (i >= others.size()) return "";
-                return label(others, i) + ", " + Ui.trf("{i} of {n}", "i", i + 1, "n", others.size());
+                if (i >= slots.size()) return "";
+                return slots.get(i).label + ", " + Ui.trf("{i} of {n}", "i", i + 1, "n", slots.size());
             case Z_TOP:
                 if (i >= TABS) return label(lightButtons, i - TABS);
                 return Ui.trf("{name}, tab {i} of {n}", "name", tabs()[i], "i", i + 1, "n", TABS);
@@ -2832,11 +2990,9 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float dy;
         switch (group) {
             case GRID: {
-                if (!sheetOpen || i >= others.size()) return false;
-                float gridWidth = COLUMNS * GRID_W + (COLUMNS - 1) * GRID_GAP;
-                float x = ((1920 - gridWidth) / 2 + (i % COLUMNS) * (GRID_W + GRID_GAP)) * k;
-                float y = (GRID_TOP + (i / COLUMNS - scroll.target) * GRID_ROW) * k;
-                a11yRect.set(x, y, x + GRID_W * k, y + GRID_H * k);
+                if (!sheetOpen || i >= slots.size()) return false;
+                RectF b = slots.get(i).base;
+                a11yRect.set(b.left * k, (b.top - scroll.target) * k, b.right * k, (b.bottom - scroll.target) * k);
                 dy = 0;
                 break;
             }
@@ -2877,7 +3033,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private int a11yFocused() {
-        if (sheetOpen) return others.isEmpty() ? -1 : a11yId(GRID, gridIndex);
+        if (sheetOpen) return slots.isEmpty() ? -1 : a11yId(GRID, gridIndex);
         switch (zone) {
             case Z_TOP: return a11yId(Z_TOP, topIndex);
             case Z_CARDS: return cardIndex < cards.size() ? a11yId(Z_CARDS, cardIndex) : -1;
@@ -2909,7 +3065,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         wake();
         int group = (id - 1) / 1000, i = (id - 1) % 1000;
         if (group == GRID) {
-            if (!sheetOpen || i >= others.size()) return;
+            if (!sheetOpen || i >= slots.size()) return;
             gridIndex = i;
             retargetGrid(false);
             gridDirty = true;

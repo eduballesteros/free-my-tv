@@ -68,6 +68,7 @@ final class HomeApps {
         String symbol;      // icon for the shortcuts and special cards
         Bitmap tile;        // 16:9 card (apps and specials)
         Bitmap icon;        // the Glass squircle icon (dock, All Apps); null = none, the card is used
+        int category = CAT_UTILITIES;   // its App Library folder (CAT_…)
         Bitmap logo;        // colored logo with no background (shelf); null = use the card
         Bitmap logoDark;    // version for a light background (YouTube's white icon), if any
         float logoInk;      // fraction of the logo with ink (thin logos are drawn larger, with the same "weight")
@@ -153,6 +154,7 @@ final class HomeApps {
                 it.logoScale = Float.parseFloat(d[5]);
             }
             it.icon = squircleIcon(c, pkg);
+            it.category = category(c, pkg);
             items.add(it);
         }
         return items;
@@ -366,6 +368,7 @@ final class HomeApps {
             it.label = app[1];
             it.tile = appTile(c, null, pkg, 0);
             it.icon = squircleIcon(c, pkg);
+            it.category = category(c, pkg);
             items.add(it);
         }
         Collections.sort(items, (a, b) -> a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT)));
@@ -887,6 +890,51 @@ final class HomeApps {
             icon.draw(canvas);
         }
         return b;
+    }
+
+    // The App Library's folders, in their order on screen (Suggestions comes first, from the apps used last).
+    static final int CAT_ENTERTAINMENT = 0, CAT_MUSIC = 1, CAT_GAMES = 2, CAT_PHOTO = 3, CAT_NEWS = 4, CAT_SOCIAL = 5,
+            CAT_UTILITIES = 6, CATEGORIES = 7;
+
+    /** The folder's name, in the screen's language. */
+    static String categoryName(int category) {
+        switch (category) {
+            case CAT_ENTERTAINMENT: return Ui.tr("Entertainment");
+            case CAT_MUSIC: return Ui.tr("Music");
+            case CAT_GAMES: return Ui.tr("Games");
+            case CAT_PHOTO: return Ui.tr("Photo & Video");
+            case CAT_NEWS: return Ui.tr("News");
+            case CAT_SOCIAL: return Ui.tr("Social");
+            default: return Ui.tr("Utilities");
+        }
+    }
+
+    /**
+     * The app's folder, from the category it declares. Many TV apps declare none: then a system app goes to Utilities
+     * and any other (on a TV, nearly always something to watch) to Entertainment.
+     */
+    static int category(Context c, String pkg) {
+        // The streaming apps we know (TVs often ship them as system apps that declare nothing), and live TV.
+        String[] known = known(pkg);
+        if (known != null) return known[0].equals("spotify") ? CAT_MUSIC : CAT_ENTERTAINMENT;
+        if (java.util.Arrays.asList(LIVE_TV_APPS).contains(pkg) || pkg.contains("livetv")) return CAT_ENTERTAINMENT;
+        if (pkg.contains("gallery") || pkg.contains("photo")) return CAT_PHOTO;
+        try {
+            ApplicationInfo ai = c.getPackageManager().getApplicationInfo(pkg, 0);
+            switch (ai.category) {
+                case ApplicationInfo.CATEGORY_GAME: return CAT_GAMES;
+                case ApplicationInfo.CATEGORY_AUDIO: return CAT_MUSIC;
+                case ApplicationInfo.CATEGORY_VIDEO: return CAT_ENTERTAINMENT;
+                case ApplicationInfo.CATEGORY_IMAGE: return CAT_PHOTO;
+                case ApplicationInfo.CATEGORY_NEWS: return CAT_NEWS;
+                case ApplicationInfo.CATEGORY_SOCIAL: return CAT_SOCIAL;
+                case ApplicationInfo.CATEGORY_MAPS:
+                case ApplicationInfo.CATEGORY_PRODUCTIVITY: return CAT_UTILITIES;
+                default: return (ai.flags & ApplicationInfo.FLAG_SYSTEM) != 0 ? CAT_UTILITIES : CAT_ENTERTAINMENT;
+            }
+        } catch (PackageManager.NameNotFoundException e) {
+            return CAT_UTILITIES;
+        }
     }
 
     /** The size the squircle icons are made at (the dock scales them down, always to a smaller size). */

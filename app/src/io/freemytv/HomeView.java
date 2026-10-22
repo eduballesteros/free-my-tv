@@ -82,8 +82,10 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     // Bottom drawer (measured with it open; everything moves up by SHIFT).
     private static final float SHIFT = 560, ROW_TITLE = 518, ROW_TOP = 540, ROW_H = 126, CARDS_TOP = 1080 - Theme.SAFE_Y - Theme.WIDGET_H, CARDS_H = Theme.WIDGET_H;
     // "All Apps" sheet.
-    private static final int COLUMNS = 5, VISIBLE_ROWS = 3;
-    private static final float GRID_W = 300, GRID_H = 169, GRID_GAP = 40, GRID_ROW = 239, GRID_TOP = 196, GRID_RADIUS = 22;
+    // Glass: squircle icons with their names under them, eight to a row.
+    private static final int COLUMNS = 8, VISIBLE_ROWS = 3;
+    private static final float GRID_W = Theme.ICON_GRID, GRID_H = Theme.ICON_GRID, GRID_GAP = Theme.ICON_GRID_GAP, GRID_ROW = 250,
+            GRID_TOP = 200, GRID_RADIUS = Theme.ICON_GRID * Theme.ICON_RADIUS;
     private static final int SMOKE = 0xFF111113, INK = 0xFF1C1C1E, WHITE = 0xFFF5F5F7;
     private static final int UP_COLOR = 0xFF30D158, DOWN_COLOR = 0xFFFF453A;
     private static final long TOAST_MS = 6000, FADE_MS = 800;
@@ -1460,44 +1462,56 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float f = tileFocus[i].value, fc = Ui.clamp(f), s = 1 + (Theme.FOCUS_SCALE - 1) * f + LIFT_GROW * l;
         float alpha = zone == Z_SHELF && !reordering ? Theme.FOCUS_DIM + (1 - Theme.FOCUS_DIM) * fc : 1;
         RectF base = tileRects[i];
+        drawIcon(c, it.icon, base, f + LIFT_GROW / (Theme.FOCUS_SCALE - 1) * l, alpha);
+        float cx = base.centerX();
+        if (fc > 0.01f) {
+            // The name under the focused icon, inside the dock.
+            lTip.setAlpha(Math.round(255 * fc));
+            c.drawText(it.label, cx, platterRect.bottom - 14 * k, lTip);
+            lTip.setAlpha(255);
+        }
+    }
+
+    /**
+     * A squircle icon with the Glass focus (`f`, 0 to 1): it grows 8% and rises (a deeper, lower shadow), gains a white
+     * rim and a diagonal sheen. `alpha`: 80% for the others in the row while it has the focus. Leaves its frame in `cell`.
+     */
+    private void drawIcon(Canvas c, Bitmap icon, RectF base, float f, float alpha) {
+        float fc = Ui.clamp(f), s = 1 + (Theme.FOCUS_SCALE - 1) * f;
         float size = base.width(), cx = base.centerX(), cy = base.centerY(), r0 = Theme.squircleRadius(size);
         cell.set(cx - size * s / 2, cy - size * s / 2, cx + size * s / 2, cy + size * s / 2);
         c.save();
         c.translate(cx, cy);
         c.scale(s, s);
         tmp.set(-size / 2, -size / 2, size / 2, size / 2);
-        tmp.offset(0, (8 + (Theme.FOCUS_SHADOW_Y - 8) * f + 6 * l) * k * 0.5f);
+        tmp.offset(0, (8 + (Theme.FOCUS_SHADOW_Y - 8) * fc) * k * 0.5f);
         shadowDeep.setColor(Ui.alpha(0xFF000000, (tone(0.16f, 0.32f) + (Theme.FOCUS_SHADOW_ALPHA - 0.16f) * fc) * alpha));
         shadows.draw(c, tmp, r0, DEEP_BLUR * k, shadowDeep);
         c.restore();
         bitmapPaint.setAlpha(Math.round(255 * alpha));
-        c.drawBitmap(it.icon, null, cell, bitmapPaint);
+        c.drawBitmap(icon, null, cell, bitmapPaint);
         bitmapPaint.setAlpha(255);
-        if (fc > 0.01f) {
-            if (iconSheen == null || iconSheenSize != size) {
-                iconSheenSize = size;
-                iconSheen = new LinearGradient(-size / 2, -size / 2, size * 0.1f, size * 0.25f,
-                        Ui.alpha(0xFFFFFFFF, Theme.SHEEN), 0x00FFFFFF, Shader.TileMode.CLAMP);
-            }
-            c.save();
-            c.translate(cx, cy);
-            c.scale(s, s);
-            tmp.set(-size / 2, -size / 2, size / 2, size / 2);
-            sheen.setShader(iconSheen);
-            sheen.setAlpha(Math.round(255 * fc));
-            c.drawRoundRect(tmp, r0, r0, sheen);
-            sheen.setAlpha(255);
-            rim.setShader(null);
-            rim.setStyle(Paint.Style.STROKE);
-            rim.setColor(Ui.alpha(Theme.RIM_COLOR, fc));
-            rim.setStrokeWidth(Theme.RIM * k / s);
-            c.drawRoundRect(tmp, r0, r0, rim);
-            c.restore();
-            // The name under the focused icon, inside the dock.
-            lTip.setAlpha(Math.round(255 * fc));
-            c.drawText(it.label, cx, platterRect.bottom - 14 * k, lTip);
-            lTip.setAlpha(255);
+        if (fc <= 0.01f) return;
+        if (iconSheen == null || iconSheenSize != size) {
+            iconSheenSize = size;
+            iconSheen = new LinearGradient(-size / 2, -size / 2, size * 0.1f, size * 0.25f,
+                    Ui.alpha(0xFFFFFFFF, Theme.SHEEN), 0x00FFFFFF, Shader.TileMode.CLAMP);
         }
+        c.save();
+        c.translate(cx, cy);
+        c.scale(s, s);
+        tmp.set(-size / 2, -size / 2, size / 2, size / 2);
+        sheen.setShader(iconSheen);
+        sheen.setAlpha(Math.round(255 * fc));
+        c.drawRoundRect(tmp, r0, r0, sheen);
+        sheen.setAlpha(255);
+        rim.setShader(null);
+        rim.setStyle(Paint.Style.STROKE);
+        rim.setColor(Ui.alpha(Theme.RIM_COLOR, fc));
+        rim.setStrokeWidth(Theme.RIM * k / s);
+        c.drawRoundRect(tmp, r0, r0, rim);
+        rim.setStrokeWidth(2.5f * k);
+        c.restore();
     }
 
     private LinearGradient iconSheen;
@@ -2104,7 +2118,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     private void setOthers(List<HomeApps.Item> list) {
         others = list;
         gridFocus = new Spring[list.size()];
-        for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = new Spring(0.3f, 0.82f, 0);
+        for (int i = 0; i < gridFocus.length; i++) gridFocus[i] = Theme.focus();
         gridLabels = null;
         gridIndex = Math.min(gridIndex, Math.max(0, list.size() - 1));
         retargetGrid(true);
@@ -2144,14 +2158,19 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
     }
 
     private void drawSheet(Canvas c) {
-        c.drawColor(0xA8000000);
+        // The regular material over the wallpaper (already soft: no blur needed on top), the title in Title 1.
+        c.drawColor(tone(Theme.REGULAR, Theme.REGULAR_DARK));
         float shift = scroll.value * GRID_ROW * k;
-        c.drawText(Ui.tr("All Apps"), w / 2f, 124 * k - shift, sheetTitle);
+        sheetTitle.setTextSize(Theme.TITLE * k);
+        sheetTitle.setLetterSpacing(Theme.TITLE_TRACK);
+        sheetTitle.setColor(tone(Theme.LABEL, Theme.LABEL_DARK));
+        c.drawText(Ui.tr("All Apps"), w / 2f, 140 * k - shift, sheetTitle);
+        gridLabel.setTextSize(Theme.BODY * k);
         int n = others.size();
         if (gridLabels == null || gridLabels.length != n) {
             gridLabels = new String[n];
             for (int i = 0; i < n; i++) {
-                gridLabels[i] = TextUtils.ellipsize(others.get(i).label, gridLabel, (GRID_W - 10) * k, TextUtils.TruncateAt.END).toString();
+                gridLabels[i] = TextUtils.ellipsize(others.get(i).label, gridLabel, (GRID_W + GRID_GAP - 12) * k, TextUtils.TruncateAt.END).toString();
             }
         }
         float gridWidth = COLUMNS * GRID_W + (COLUMNS - 1) * GRID_GAP;
@@ -2163,11 +2182,13 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
             if (y > h || y + GRID_ROW * k < 0) continue;
             float x = left + col * (GRID_W + GRID_GAP) * k;
             gridCell.set(x, y, x + GRID_W * k, y + GRID_H * k);
-            float f = gridFocus[i].value;
-            drawCard(c, others.get(i).tile, gridCell, GRID_RADIUS * k, f, 0.08f);
+            float f = gridFocus[i].value, alpha = sheetOpen ? Theme.FOCUS_DIM + (1 - Theme.FOCUS_DIM) * Ui.clamp(f) : 1;
+            HomeApps.Item item = others.get(i);
+            if (item.icon != null) drawIcon(c, item.icon, gridCell, f, alpha);
+            else drawCard(c, item.tile, gridCell, GRID_RADIUS * k, f, Theme.FOCUS_SCALE - 1);
             if (sheetOpen && i == gridIndex) focusedCell.set(cell);
-            gridLabel.setColor(blend(0x99FFFFFF, 0xFFFFFFFF, Ui.clamp(f)));
-            c.drawText(gridLabels[i], gridCell.centerX(), gridCell.bottom + (40 + 6 * f) * k, gridLabel);
+            gridLabel.setColor(Ui.alpha(tone(Theme.LABEL, Theme.LABEL_DARK), alpha));
+            c.drawText(gridLabels[i], gridCell.centerX(), gridCell.bottom + (44 + 8 * f) * k, gridLabel);
         }
     }
 

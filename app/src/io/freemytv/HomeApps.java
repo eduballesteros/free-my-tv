@@ -365,6 +365,7 @@ final class HomeApps {
             it.key = pkg;
             it.label = app[1];
             it.tile = appTile(c, null, pkg, 0);
+            it.icon = squircleIcon(c, pkg);
             items.add(it);
         }
         Collections.sort(items, (a, b) -> a.label.toLowerCase(Locale.ROOT).compareTo(b.label.toLowerCase(Locale.ROOT)));
@@ -378,7 +379,24 @@ final class HomeApps {
     private static Item special(Context c, int kind, String key, String label, String symbol) {
         Item it = shortcut(kind, key, label, symbol);
         it.tile = symbolTile(c, key, symbol);
+        it.icon = symbolSquircle(c, key, symbol);
         return it;
+    }
+
+    /** Our own entries (Free My TV's settings): the symbol in white on a grey squircle, like iOS's Settings icon. */
+    private static synchronized Bitmap symbolSquircle(Context c, String key, String symbol) {
+        String cacheKey = "squircle-symbol:" + key;
+        if (TILES.containsKey(cacheKey)) return TILES.get(cacheKey);
+        int size = ICON_PX;
+        Bitmap b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(b);
+        Paint fill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        fill.setShader(new LinearGradient(0, 0, 0, size, 0xFFA3A9B8, 0xFF6C7385, Shader.TileMode.CLAMP));
+        canvas.drawPath(squircle(), fill);
+        Symbols.draw(c, canvas, symbol, size / 2f, size / 2f, size * 0.46f, 0xFFFFFFFF);
+        b.setHasMipMap(true);
+        TILES.put(cacheKey, b);
+        return b;
     }
 
     /** Opens the item with the system zoom transition growing out of the card (the app starts opening right away). */

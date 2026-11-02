@@ -3349,7 +3349,12 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         float x = r.left + 56 * k;
         c.drawText(ytHeading, x, r.top + 100 * k, lCardTitle);
         c.drawText(ytLine, x, r.top + 170 * k, lCardMeta);
-        if (!ytCode.isEmpty()) c.drawText(ytCode, x, r.top + 290 * k, lHeadClock);
+        if (!ytCode.isEmpty()) {
+            // The clock's paint is centred (the time at the top): the code starts at the card's left edge.
+            lHeadClock.setTextAlign(Paint.Align.LEFT);
+            c.drawText(ytCode, x, r.top + 290 * k, lHeadClock);
+            lHeadClock.setTextAlign(Paint.Align.CENTER);
+        }
         if (!ytWait.isEmpty()) c.drawText(ytWait, x, r.top + 360 * k, lCardMeta);
     }
 

@@ -13,8 +13,13 @@ Mis vídeos de YouTube, mi calendario y mis apps, sin anuncios. Hecho con Claude
 
 </div>
 
-Versión personal de [Free My TV](https://github.com/simbasjungles/free-my-tv), adaptada a una Xiaomi MiTV con
-Google TV (Android 11). Sigue siendo lo que es el original: sin root, sin desinstalar nada y con un botón para volver
+> [!NOTE]
+> Este repositorio es una versión personal de **[Free My TV](https://github.com/simbasjungles/free-my-tv)**, el proyecto
+> original de [simbasjungles](https://github.com/simbasjungles). Todo el mérito de la base (el cambio de pantalla de
+> inicio, el modo Original, el vigilante, las versiones para LG y Samsung) es suyo. Si buscas la versión oficial, con
+> instalación paso a paso y soporte para más teles, ve allí: [simbasjungles/free-my-tv](https://github.com/simbasjungles/free-my-tv).
+
+Esta edición está adaptada a una Xiaomi MiTV con Google TV (Android 11). Sigue siendo lo que es el original: sin root, sin desinstalar nada y con un botón para volver
 a la pantalla de inicio de fábrica.
 
 ## Qué cambia respecto al original
@@ -36,12 +41,22 @@ a la pantalla de inicio de fábrica.
 - **Entradas con nombre**: llama a cada HDMI como quieras (por ejemplo, "PS4").
 - **Arreglo para Xiaomi.** El botón de Ajustes del mando ya no deja bloqueados los demás botones.
 
-<div align="center">
-<img src=".github/screens/drawer.webp" width="880" alt="El cajón: entradas (TV en vivo, PS4, HDMI 2, HDMI 3), accesos directos y los widgets de reloj analógico, tiempo en Sevilla y agenda">
-<br><br>
-<img src=".github/screens/library.webp" width="434" alt="Biblioteca de apps con carpetas Sugerencias, Entretenimiento, Música, Foto y vídeo y Utilidades">
-<img src=".github/screens/screensaver.webp" width="434" alt="Protector de pantalla: fecha, hora grande y el tiempo sobre un fondo azul oscuro">
-</div>
+## Capturas
+
+Hechas en la tele (Xiaomi MiTV, Google TV).
+
+<table>
+<tr>
+<td colspan="2"><img src=".github/screens/home.webp" alt="Pantalla de inicio con la pestaña Películas"><br><sub><b>Inicio.</b> La hora, el saludo, las pestañas y el dock de cristal.</sub></td>
+</tr>
+<tr>
+<td colspan="2"><img src=".github/screens/drawer.webp" alt="El cajón con las entradas, los accesos directos y los widgets"><br><sub><b>Cajón.</b> Entradas con nombre, accesos directos y widgets de reloj, tiempo y agenda.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src=".github/screens/library.webp" alt="Biblioteca de apps con carpetas por categoría"><br><sub><b>Biblioteca de apps.</b> Carpetas por categoría, como en el iPhone.</sub></td>
+<td width="50%"><img src=".github/screens/screensaver.webp" alt="Protector de pantalla con la hora grande"><br><sub><b>Protector de pantalla.</b> La hora grande sobre el fondo del momento del día.</sub></td>
+</tr>
+</table>
 
 ## Ajustes propios
 
@@ -75,7 +90,11 @@ Para compilar: `./build.sh`. Guarda bien `freemytv.keystore`: las actualizacione
 
 ## Créditos y licencia
 
-Basado en [Free My TV](https://github.com/simbasjungles/free-my-tv) de sus colaboradores, con licencia [MIT](LICENSE),
-que se mantiene. Iconos de interfaz: Material Symbols (Apache 2.0). Fuente: Inter (SIL OFL). Películas y series:
-[TMDB](https://www.themoviedb.org); este producto usa la API de TMDB, pero TMDB no lo respalda ni lo certifica.
-Los logotipos de las apps son de sus dueños.
+- **Proyecto original:** [Free My TV](https://github.com/simbasjungles/free-my-tv), de
+  [simbasjungles](https://github.com/simbasjungles) y sus colaboradores, con licencia [MIT](LICENSE), que se mantiene
+  en este fork. Su web: [freemytv.io](https://freemytv.io).
+- **Esta edición:** el diseño Glass y los cambios de arriba, por [eduballesteros](https://github.com/eduballesteros),
+  hechos con Claude Code.
+- **Recursos:** iconos de interfaz Material Symbols (Apache 2.0), fuente Inter (SIL OFL) y películas y series de
+  [TMDB](https://www.themoviedb.org); este producto usa la API de TMDB, pero TMDB no lo respalda ni lo certifica.
+  Los logotipos de las apps son de sus dueños.

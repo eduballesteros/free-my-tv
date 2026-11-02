@@ -50,6 +50,9 @@ Hechas en la tele (Xiaomi MiTV, Google TV).
 <td colspan="2"><img src=".github/screens/home.webp" alt="Pantalla de inicio con la pestaña Películas"><br><sub><b>Inicio.</b> La hora, el saludo, las pestañas y el dock de cristal.</sub></td>
 </tr>
 <tr>
+<td colspan="2"><img src=".github/screens/youtube.webp" alt="La pestaña Explorar con los vídeos más nuevos de YouTube"><br><sub><b>Explorar con YouTube.</b> Los vídeos más nuevos de los canales que más ves, sin Shorts.</sub></td>
+</tr>
+<tr>
 <td colspan="2"><img src=".github/screens/drawer.webp" alt="El cajón con las entradas, los accesos directos y los widgets"><br><sub><b>Cajón.</b> Entradas con nombre, accesos directos y widgets de reloj, tiempo y agenda.</sub></td>
 </tr>
 <tr>

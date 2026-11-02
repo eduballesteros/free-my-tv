@@ -621,7 +621,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         lTitle.setLetterSpacing(Theme.TITLE_TRACK);
         lTab = Ui.text(Ui.medium, Theme.BODY * k, L_DIM);
         lTab.setLetterSpacing(Theme.BODY_TRACK);
-        lHeadClock = Ui.numbers(Ui.displaySemibold, 104 * k, L_INK);
+        lHeadClock = Ui.numbers(Ui.displaySemibold, 92 * k, L_INK);
         lHeadClock.setLetterSpacing(Theme.FIGURES_TRACK);
         lHeadClock.setTextAlign(Paint.Align.CENTER);
         lGreeting = Ui.text(Ui.displaySemibold, Theme.HEADLINE * k, L_INK);
@@ -3531,7 +3531,7 @@ final class HomeView extends ViewGroup implements Choreographer.FrameCallback, H
         }
         // Centred at the top: the date, then the time under it (iOS's lock screen); the greeting on the left.
         float dateBase = Theme.SAFE_Y * k + Ui.cap(lHeadDate) + 3 * k;
-        float clockBase = dateBase + 14 * k + Ui.cap(lHeadClock);
+        float clockBase = dateBase + 26 * k + Ui.cap(lHeadClock);   // room between the date and the time
         c.drawText(headDate, w / 2f, dateBase, lHeadDate);
         c.drawText(headClock, w / 2f, clockBase, lHeadClock);
         c.drawText(greeting, MARGIN * k - Ui.leftBearing(lGreeting, greeting), clockBase - Ui.cap(lHeadClock) / 2 + Ui.halfCap(lGreeting), lGreeting);
